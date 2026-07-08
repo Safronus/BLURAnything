@@ -1,0 +1,25 @@
+# Virtual environment (symlink to an external venv, see scripts/setup-venv.sh)
+.venv
+venv/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
