@@ -63,6 +63,26 @@ def test_changing_effect_changes_output() -> None:
     assert doc.render().tobytes() != before.tobytes()
 
 
+def test_ellipse_and_polygon_mark_nonempty() -> None:
+    ellipse_doc = make_document()
+    ellipse_doc.stamp_ellipse((5, 5, 20, 20))
+    assert not ellipse_doc.is_empty
+
+    polygon_doc = make_document()
+    polygon_doc.stamp_polygon([(0, 0), (30, 0), (15, 20)])
+    assert not polygon_doc.is_empty
+
+
+def test_brush_stroke_collapses_into_one_undo_step() -> None:
+    doc = make_document()
+    doc.stamp_brush([(5, 5)], radius=4, new_stroke=True)
+    doc.stamp_brush([(5, 5), (10, 5)], radius=4, new_stroke=False)
+    doc.stamp_brush([(10, 5), (20, 5)], radius=4, new_stroke=False)
+    assert not doc.is_empty
+    doc.undo()
+    assert doc.is_empty  # the whole stroke undoes at once
+
+
 def test_clear_mask_is_undoable() -> None:
     doc = make_document()
     doc.stamp_rectangle((5, 5, 25, 20))

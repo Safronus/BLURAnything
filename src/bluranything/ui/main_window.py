@@ -30,7 +30,7 @@ from bluranything.core.effects import (
     SolidFillEffect,
 )
 from bluranything.ui.clipboard import image_from_clipboard
-from bluranything.ui.editor_canvas import EditorCanvas
+from bluranything.ui.editor_canvas import DEFAULT_BRUSH_RADIUS, EditorCanvas, Tool
 from bluranything.ui.scaled_view import ScaledImageView
 
 APP_TITLE = "BLURAnything"
@@ -43,6 +43,23 @@ _EFFECT_KINDS: tuple[tuple[str, str, str, int, int, int], ...] = (
     ("Pixelate", "pixelate", "Pixel size", 2, 64, DEFAULT_PIXEL_SIZE),
     ("Solid fill", "solid", "Solid", 0, 0, 0),
 )
+
+#: Selectable tools shown in the toolbar, in order.
+_TOOLS: tuple[tuple[str, Tool], ...] = (
+    ("Rectangle", Tool.RECTANGLE),
+    ("Ellipse", Tool.ELLIPSE),
+    ("Polygon", Tool.POLYGON),
+    ("Lasso", Tool.LASSO),
+    ("Brush", Tool.BRUSH),
+)
+
+_TOOL_HINTS = {
+    Tool.RECTANGLE: "Rectangle — drag to blur a box.",
+    Tool.ELLIPSE: "Ellipse — drag to blur an oval.",
+    Tool.POLYGON: "Polygon — click points, double-click to close.",
+    Tool.LASSO: "Lasso — drag to draw a freehand area.",
+    Tool.BRUSH: "Brush — drag to paint blur.",
+}
 
 _OPEN_FILTER = "Images (" + " ".join(f"*{ext}" for ext in imageio.INPUT_EXTENSIONS) + ")"
 _SAVE_FILTER = ";;".join(
@@ -76,6 +93,14 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._preview)
         splitter.setSizes([600, 600])
         self.setCentralWidget(splitter)
+
+        self._tool_combo = QComboBox(self)
+        for tool_label, tool in _TOOLS:
+            self._tool_combo.addItem(tool_label, tool.value)
+        self._brush_label = QLabel("Brush", self)
+        self._brush = self._make_slider(4, 80, DEFAULT_BRUSH_RADIUS)
+        self._brush.setEnabled(False)
+        self._brush_label.setEnabled(False)
 
         self._effect_combo = QComboBox(self)
         for label, key, *_ in _EFFECT_KINDS:
@@ -163,6 +188,10 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._paste_action)
         toolbar.addAction(self._save_action)
         toolbar.addSeparator()
+        toolbar.addWidget(self._tool_combo)
+        toolbar.addWidget(self._brush_label)
+        toolbar.addWidget(self._brush)
+        toolbar.addSeparator()
         toolbar.addWidget(self._effect_combo)
         toolbar.addWidget(self._intensity_label)
         toolbar.addWidget(self._intensity)
@@ -175,10 +204,20 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
     def _connect_controls(self) -> None:
+        self._tool_combo.currentIndexChanged.connect(self._on_tool_changed)
+        self._brush.valueChanged.connect(self._editor.set_brush_radius)
         self._effect_combo.currentIndexChanged.connect(self._on_effect_kind_changed)
         self._intensity.valueChanged.connect(self._on_effect_changed)
         self._feather.valueChanged.connect(self._on_effect_changed)
         self._soft_edges.toggled.connect(self._on_effect_changed)
+
+    def _on_tool_changed(self) -> None:
+        tool = Tool(self._tool_combo.currentData())
+        self._editor.set_tool(tool)
+        is_brush = tool is Tool.BRUSH
+        self._brush.setEnabled(is_brush)
+        self._brush_label.setEnabled(is_brush)
+        self.statusBar().showMessage(_TOOL_HINTS[tool])
 
     # ------------------------------------------------------------- public API
 

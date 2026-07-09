@@ -144,3 +144,10 @@ def test_effect_selector_updates_document(window: MainWindow, image_file: Path) 
     window._effect_combo.setCurrentIndex(2)  # Solid fill
     assert isinstance(doc.effect, SolidFillEffect)
     assert not window._intensity.isEnabled()  # solid fill has no intensity
+
+
+def test_tool_selector_toggles_brush_size(window: MainWindow) -> None:
+    window._tool_combo.setCurrentIndex(4)  # Brush
+    assert window._brush.isEnabled()
+    window._tool_combo.setCurrentIndex(0)  # Rectangle
+    assert not window._brush.isEnabled()

@@ -8,6 +8,7 @@ model is unit-testable without a GUI.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 
 from PIL import Image
@@ -85,6 +86,30 @@ class Document:
         if new_stroke:
             self._begin_change()
         mask_ops.stamp_rectangle(self._mask, box)
+
+    def stamp_ellipse(self, box: mask_ops.Box, *, new_stroke: bool = True) -> None:
+        """Add an ellipse (bounded by *box*) to the selection."""
+        if new_stroke:
+            self._begin_change()
+        mask_ops.stamp_ellipse(self._mask, box)
+
+    def stamp_polygon(self, points: Sequence[mask_ops.Point], *, new_stroke: bool = True) -> None:
+        """Add a polygon through *points* to the selection."""
+        if new_stroke:
+            self._begin_change()
+        mask_ops.stamp_polygon(self._mask, points)
+
+    def stamp_brush(
+        self, points: Sequence[mask_ops.Point], radius: int, *, new_stroke: bool = True
+    ) -> None:
+        """Paint a brush stroke of *radius* through *points*.
+
+        Pass ``new_stroke=True`` for the first dab of a drag and ``False`` for
+        the rest, so the whole stroke collapses into a single undo step.
+        """
+        if new_stroke:
+            self._begin_change()
+        mask_ops.stamp_stroke(self._mask, points, radius)
 
     def clear_mask(self) -> None:
         """Remove all redactions (undoable)."""

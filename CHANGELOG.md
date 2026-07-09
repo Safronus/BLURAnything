@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Non-destructive editor: open (PNG/TIFF/JPG/HEIC/BMP/WebP) or paste from the
-  clipboard (⌘V) an image and blur a region by dragging a rectangle.
+  clipboard (⌘V) an image and redact regions.
+- Selection tools: rectangle, ellipse, polygon, freehand lasso and an
+  adjustable-size brush, painting a live selection mask.
 - Split view — interactive editor on the left, live result preview on the right.
 - Multiple redaction effects, switchable in the toolbar: Gaussian blur,
   pixelate/mosaic and solid fill, with an adjustable intensity per effect.
