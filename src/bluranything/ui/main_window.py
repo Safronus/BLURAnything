@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -19,22 +20,22 @@ from PySide6.QtWidgets import (
 )
 
 from bluranything import __version__
-from bluranything.core import imageio
+from bluranything.core import imageio, session
 from bluranything.core.document import Document, EdgeMode
 from bluranything.core.effects import (
     DEFAULT_BLUR_RADIUS,
     DEFAULT_PIXEL_SIZE,
     Effect,
-    GaussianBlurEffect,
-    PixelateEffect,
-    SolidFillEffect,
+    effect_from,
 )
-from bluranything.ui.clipboard import image_from_clipboard
+from bluranything.ui.clipboard import image_from_clipboard, image_to_clipboard
 from bluranything.ui.editor_canvas import DEFAULT_BRUSH_RADIUS, EditorCanvas, Tool
 from bluranything.ui.scaled_view import ScaledImageView
 
 APP_TITLE = "BLURAnything"
 DEFAULT_FEATHER = 6
+AUTOSAVE_DEBOUNCE_MS = 2500
+_DEFAULT_AUTOSAVE_DIR = Path(tempfile.gettempdir()) / "bluranything" / "autosave"
 
 #: Selectable effects: (combo label, key, slider caption, slider min, max, default).
 #: A zero range means the intensity slider does not apply (e.g. solid fill).
@@ -78,11 +79,16 @@ _SAVE_FILTER = ";;".join(
 class MainWindow(QMainWindow):
     """Open or paste an image, blur regions non-destructively, then save."""
 
-    def __init__(self) -> None:
+    def __init__(self, autosave_dir: Path | None = None) -> None:
         super().__init__()
         self._document: Document | None = None
         self._path: Path | None = None
         self._dirty = False
+        self._autosave_dir = autosave_dir or _DEFAULT_AUTOSAVE_DIR
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setInterval(AUTOSAVE_DEBOUNCE_MS)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.timeout.connect(self._write_autosave)
 
         self._editor = EditorCanvas(self)
         self._editor.changed.connect(self._on_edit)
@@ -121,6 +127,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Open an image or paste (⌘V), then drag to blur.")
         self.resize(1180, 760)
         self._refresh()
+        self._maybe_offer_recovery()
 
     # ------------------------------------------------------------------ setup
 
@@ -153,6 +160,10 @@ class MainWindow(QMainWindow):
         self._redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         self._redo_action.triggered.connect(self.redo)
 
+        self._copy_action = QAction("&Copy Result", self)
+        self._copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self._copy_action.triggered.connect(self.copy_result)
+
         self._clear_action = QAction("Clear &All", self)
         self._clear_action.triggered.connect(self.clear)
 
@@ -176,6 +187,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self._undo_action)
         edit_menu.addAction(self._redo_action)
         edit_menu.addSeparator()
+        edit_menu.addAction(self._copy_action)
         edit_menu.addAction(self._clear_action)
 
         help_menu = self.menuBar().addMenu("&Help")
@@ -257,6 +269,7 @@ class MainWindow(QMainWindow):
             return False
         self._path = path
         self._dirty = False
+        self._clear_autosave()
         self._refresh()
         self.statusBar().showMessage(f"Saved {path.name}")
         return True
@@ -276,6 +289,12 @@ class MainWindow(QMainWindow):
             self._document.clear_mask()
             self._after_change()
 
+    def copy_result(self) -> None:
+        """Copy the rendered result to the system clipboard."""
+        if self._document is not None:
+            image_to_clipboard(self._document.render())
+            self.statusBar().showMessage("Copied result to the clipboard")
+
     @property
     def document(self) -> Document | None:
         return self._document
@@ -287,13 +306,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- helpers
 
     def _current_effect(self) -> Effect:
-        kind = self._effect_combo.currentData()
-        value = self._intensity.value()
-        if kind == "pixelate":
-            return PixelateEffect(value)
-        if kind == "solid":
-            return SolidFillEffect()
-        return GaussianBlurEffect(value)
+        return effect_from(self._effect_combo.currentData(), self._intensity.value())
 
     def _configure_intensity(self) -> None:
         """Match the intensity slider's range, caption and state to the effect."""
@@ -346,14 +359,18 @@ class MainWindow(QMainWindow):
 
     def _after_change(self) -> None:
         if self._document is not None:
-            self._editor.show_result(self._document.render())
-            self._preview.set_image(self._document.render())
+            image = self._document.render()
+            self._editor.show_result(image)
+            self._preview.set_image(image)
+        if self._dirty:
+            self._autosave_timer.start()  # debounced write
         self._refresh()
 
     def _refresh(self) -> None:
         doc = self._document
         has_doc = doc is not None
         self._save_action.setEnabled(has_doc)
+        self._copy_action.setEnabled(has_doc)
         self._undo_action.setEnabled(doc is not None and doc.can_undo)
         self._redo_action.setEnabled(doc is not None and doc.can_redo)
         self._clear_action.setEnabled(doc is not None and not doc.is_empty)
@@ -373,6 +390,70 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Cancel,
         )
         return answer == QMessageBox.StandardButton.Discard
+
+    # -------------------------------------------------------------- autosave
+
+    def _write_autosave(self) -> None:
+        if self._document is None or not self._dirty:
+            return
+        session.save_session(
+            self._autosave_dir,
+            self._document.base,
+            self._document.mask_copy(),
+            effect_kind=self._effect_combo.currentData(),
+            effect_value=self._intensity.value(),
+            edge_mode="soft" if self._soft_edges.isChecked() else "hard",
+            feather=self._feather.value(),
+            source=str(self._path) if self._path else None,
+        )
+
+    def _clear_autosave(self) -> None:
+        self._autosave_timer.stop()
+        session.clear_session(self._autosave_dir)
+
+    def _maybe_offer_recovery(self) -> None:
+        restored = session.load_session(self._autosave_dir)
+        if restored is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            APP_TITLE,
+            "Recover unsaved work from the previous session?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._restore_session(restored)
+        else:
+            session.clear_session(self._autosave_dir)
+
+    def _restore_session(self, restored: session.RestoredSession) -> None:
+        document = Document(restored.base)
+        document.set_mask(restored.mask)
+        self._document = document
+        self._path = Path(restored.source) if restored.source else None
+        controls = (self._effect_combo, self._intensity, self._feather, self._soft_edges)
+        for control in controls:
+            control.blockSignals(True)
+        self._effect_combo.setCurrentIndex(self._effect_index(restored.effect_kind))
+        self._configure_intensity()
+        if restored.effect_value:
+            self._intensity.setValue(restored.effect_value)
+        self._soft_edges.setChecked(restored.edge_mode == "soft")
+        self._feather.setValue(restored.feather)
+        for control in controls:
+            control.blockSignals(False)
+        self._apply_settings()
+        self._editor.set_document(document)
+        self._dirty = True
+        self._after_change()
+        self.statusBar().showMessage("Recovered unsaved work")
+
+    def _effect_index(self, kind: str) -> int:
+        for index in range(self._effect_combo.count()):
+            if self._effect_combo.itemData(index) == kind:
+                return index
+        return 0
 
     # ------------------------------------------------------------- Qt dialogs
 
@@ -407,6 +488,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._confirm_discard():
+            self._clear_autosave()
             event.accept()
         else:
             event.ignore()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from bluranything.core.document import Document, EdgeMode
 from bluranything.core.effects import GaussianBlurEffect
+from bluranything.core.mask import new_mask
 from tests.helpers import checkerboard
 
 
@@ -89,3 +90,12 @@ def test_clear_mask_is_undoable() -> None:
     doc.clear_mask()
     assert doc.is_empty
     assert doc.can_undo
+
+
+def test_set_mask_replaces_and_clears_history() -> None:
+    doc = make_document()
+    doc.stamp_rectangle((5, 5, 20, 20))
+    assert doc.can_undo
+    doc.set_mask(new_mask(doc.size))
+    assert doc.is_empty
+    assert not doc.can_undo

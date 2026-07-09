@@ -81,6 +81,15 @@ class Document:
         """A copy of the raw (unfeathered) mask, e.g. for an editor overlay."""
         return self._mask.copy()
 
+    def set_mask(self, mask: Image.Image) -> None:
+        """Replace the whole selection mask (for session restore; clears history)."""
+        if mask.size != self.base.size:
+            msg = f"mask size {mask.size} does not match image {self.base.size}"
+            raise ValueError(msg)
+        self._mask = mask.convert(mask_ops.MASK_MODE)
+        self._undo.clear()
+        self._redo.clear()
+
     def stamp_rectangle(self, box: mask_ops.Box, *, new_stroke: bool = True) -> None:
         """Add a rectangle to the selection. Groups into one undo step per stroke."""
         if new_stroke:

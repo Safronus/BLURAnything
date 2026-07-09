@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switchable soft (feathered) / hard region edges.
 - Undo, redo and clear-all for edits.
 - Save the result to PNG, TIFF, JPG, HEIC, WebP, BMP or PDF.
+- Copy the rendered result to the clipboard.
+- Autosave of work in progress, offered back for recovery on the next launch
+  after a crash or unexpected close.
 - Dark, macOS-like theme.
 
 ### Changed

@@ -5,7 +5,7 @@ from __future__ import annotations
 from PIL import Image
 from PySide6.QtGui import QGuiApplication
 
-from bluranything.ui.qt_image import qimage_to_pil
+from bluranything.ui.qt_image import pil_to_qimage, qimage_to_pil
 
 
 def image_from_clipboard() -> Image.Image | None:
@@ -14,3 +14,8 @@ def image_from_clipboard() -> Image.Image | None:
     if qimage.isNull():
         return None
     return qimage_to_pil(qimage)
+
+
+def image_to_clipboard(image: Image.Image) -> None:
+    """Put *image* on the system clipboard."""
+    QGuiApplication.clipboard().setImage(pil_to_qimage(image))

@@ -64,3 +64,12 @@ class SolidFillEffect:
 
     def apply(self, image: Image.Image) -> Image.Image:
         return Image.new("RGBA", image.size, self.color)
+
+
+def effect_from(kind: str, value: int) -> Effect:
+    """Build an effect from a stable key and intensity (used by UI and sessions)."""
+    if kind == "pixelate":
+        return PixelateEffect(value)
+    if kind == "solid":
+        return SolidFillEffect()
+    return GaussianBlurEffect(value)

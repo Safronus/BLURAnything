@@ -6,8 +6,12 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+from PySide6.QtWidgets import QMessageBox
 from pytestqt.qtbot import QtBot
 
+from bluranything.core import session
+from bluranything.core.mask import new_mask, stamp_rectangle
+from bluranything.ui.clipboard import image_from_clipboard
 from bluranything.ui.main_window import MainWindow
 from tests.helpers import checkerboard
 
@@ -19,8 +23,8 @@ def _reset_dirty(window: MainWindow) -> None:
 
 
 @pytest.fixture
-def window(qtbot: QtBot) -> MainWindow:
-    win = MainWindow()
+def window(qtbot: QtBot, tmp_path: Path) -> MainWindow:
+    win = MainWindow(autosave_dir=tmp_path / "autosave")
     qtbot.addWidget(win, before_close_func=_reset_dirty)
     return win
 
@@ -151,3 +155,80 @@ def test_tool_selector_toggles_brush_size(window: MainWindow) -> None:
     assert window._brush.isEnabled()
     window._tool_combo.setCurrentIndex(0)  # Rectangle
     assert not window._brush.isEnabled()
+
+
+def test_copy_result_puts_image_on_clipboard(window: MainWindow, image_file: Path) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    doc.stamp_rectangle((0, 0, 40, 30))
+    window.editor.changed.emit()
+
+    window.copy_result()
+    out = image_from_clipboard()
+    assert out is not None
+    assert out.size == (40, 30)
+
+
+def test_save_clears_autosave(window: MainWindow, image_file: Path, tmp_path: Path) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    doc.stamp_rectangle((0, 0, 40, 30))
+    window.editor.changed.emit()
+    window._write_autosave()
+    assert session.has_session(window._autosave_dir)
+
+    window.save_to(tmp_path / "out.png")
+    assert not session.has_session(window._autosave_dir)
+
+
+def test_autosave_then_recover(
+    qtbot: QtBot, tmp_path: Path, image_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    autosave_dir = tmp_path / "as"
+    first = MainWindow(autosave_dir=autosave_dir)
+    qtbot.addWidget(first, before_close_func=_reset_dirty)
+    first.load_path(image_file)
+    doc = first.document
+    assert doc is not None
+    doc.stamp_rectangle((5, 5, 25, 20))
+    first.editor.changed.emit()
+    first._write_autosave()
+    assert session.has_session(autosave_dir)
+
+    monkeypatch.setattr(
+        "bluranything.ui.main_window.QMessageBox.question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+    recovered = MainWindow(autosave_dir=autosave_dir)
+    qtbot.addWidget(recovered, before_close_func=_reset_dirty)
+    assert recovered.document is not None
+    assert not recovered.document.is_empty
+    assert recovered.isWindowModified()
+
+
+def test_recovery_declined_clears_session(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    autosave_dir = tmp_path / "as2"
+    mask = new_mask((30, 20))
+    stamp_rectangle(mask, (2, 2, 10, 10))
+    session.save_session(
+        autosave_dir,
+        checkerboard((30, 20)),
+        mask,
+        effect_kind="blur",
+        effect_value=10,
+        edge_mode="soft",
+        feather=6,
+        source=None,
+    )
+    monkeypatch.setattr(
+        "bluranything.ui.main_window.QMessageBox.question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.No,
+    )
+    window = MainWindow(autosave_dir=autosave_dir)
+    qtbot.addWidget(window, before_close_func=_reset_dirty)
+    assert window.document is None
+    assert not session.has_session(autosave_dir)
