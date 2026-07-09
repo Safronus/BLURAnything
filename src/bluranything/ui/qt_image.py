@@ -6,13 +6,18 @@ from PIL import Image
 from PySide6.QtGui import QImage, QPixmap
 
 
-def pil_to_qpixmap(image: Image.Image) -> QPixmap:
-    """Convert a Pillow image to a QPixmap (via RGBA8888)."""
+def pil_to_qimage(image: Image.Image) -> QImage:
+    """Convert a Pillow image to a QImage (RGBA8888)."""
     rgba = image.convert("RGBA")
     data = rgba.tobytes("raw", "RGBA")
     qimage = QImage(data, rgba.width, rgba.height, rgba.width * 4, QImage.Format.Format_RGBA8888)
     # copy() detaches the QImage from the Python-owned buffer before it goes away
-    return QPixmap.fromImage(qimage.copy())
+    return qimage.copy()
+
+
+def pil_to_qpixmap(image: Image.Image) -> QPixmap:
+    """Convert a Pillow image to a QPixmap."""
+    return QPixmap.fromImage(pil_to_qimage(image))
 
 
 def qimage_to_pil(qimage: QImage) -> Image.Image:

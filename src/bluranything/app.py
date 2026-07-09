@@ -9,7 +9,9 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from bluranything import __version__
+from bluranything.core import imageio
 from bluranything.ui.main_window import MainWindow
+from bluranything.ui.theme import apply_theme
 
 APP_NAME = "BLURAnything"
 ORGANIZATION = "Safronus"
@@ -28,15 +30,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
-    # Reuse an existing QApplication (tests); Qt allows only one per process.
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
     app.setOrganizationName(ORGANIZATION)
+    apply_theme(app)
+    imageio.register()
 
     window = MainWindow()
     if args.image is not None:
-        window.load_image(args.image)
+        window.load_path(args.image)
     window.show()
     return app.exec()

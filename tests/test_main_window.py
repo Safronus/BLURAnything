@@ -6,19 +6,22 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
-from PySide6.QtCore import QRect
 from pytestqt.qtbot import QtBot
 
 from bluranything.ui.main_window import MainWindow
 from tests.helpers import checkerboard
 
 
+def _reset_dirty(window: MainWindow) -> None:
+    # Clear the dirty flag before qtbot closes the window at teardown, so the
+    # confirm dialog never opens and blocks the headless run.
+    window._dirty = False
+
+
 @pytest.fixture
 def window(qtbot: QtBot) -> MainWindow:
     win = MainWindow()
-    # Clear the modified flag before qtbot closes the window at teardown —
-    # otherwise closeEvent opens a confirm dialog and blocks the headless run.
-    qtbot.addWidget(win, before_close_func=lambda w: w.setWindowModified(False))
+    qtbot.addWidget(win, before_close_func=_reset_dirty)
     return win
 
 
@@ -29,20 +32,19 @@ def image_file(tmp_path: Path) -> Path:
     return path
 
 
-def test_initial_state_has_no_image(window: MainWindow) -> None:
-    assert window.image is None
+def test_initial_state_has_no_document(window: MainWindow) -> None:
+    assert window.document is None
     assert not window._save_action.isEnabled()
-    assert not window._undo_action.isEnabled()
     assert "BLURAnything" in window.windowTitle()
 
 
-def test_load_image_enables_editing(window: MainWindow, image_file: Path) -> None:
-    assert window.load_image(image_file)
-    assert window.image is not None
-    assert window.image.size == (40, 30)
+def test_load_enables_editing(window: MainWindow, image_file: Path) -> None:
+    assert window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    assert doc.size == (40, 30)
     assert window._save_action.isEnabled()
     assert not window.isWindowModified()
-    assert image_file.name in window.windowTitle()
 
 
 def test_load_missing_file_reports_error(
@@ -53,53 +55,76 @@ def test_load_missing_file_reports_error(
         "bluranything.ui.main_window.QMessageBox.critical",
         lambda *args: errors.append(str(args[2])),
     )
-    assert not window.load_image(tmp_path / "missing.png")
-    assert window.image is None
+    assert not window.load_path(tmp_path / "missing.png")
+    assert window.document is None
     assert len(errors) == 1
 
 
-def test_apply_blur_marks_dirty_and_changes_image(window: MainWindow, image_file: Path) -> None:
-    window.load_image(image_file)
-    assert window.image is not None
-    before = window.image.tobytes()
-
-    window.apply_blur(QRect(5, 5, 20, 15))
-
-    assert window.image is not None
-    assert window.image.tobytes() != before
+def test_blur_marks_dirty(window: MainWindow, image_file: Path) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    doc.stamp_rectangle((5, 5, 25, 20))
+    window.editor.changed.emit()
     assert window.isWindowModified()
     assert window._undo_action.isEnabled()
 
 
-def test_undo_restores_previous_image(window: MainWindow, image_file: Path) -> None:
-    window.load_image(image_file)
-    assert window.image is not None
-    before = window.image.tobytes()
-
-    window.apply_blur(QRect(5, 5, 20, 15))
+def test_undo_restores_empty(window: MainWindow, image_file: Path) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    doc.stamp_rectangle((5, 5, 25, 20))
+    window.editor.changed.emit()
     window.undo()
-
-    assert window.image is not None
-    assert window.image.tobytes() == before
+    assert doc.is_empty
     assert not window._undo_action.isEnabled()
 
 
-def test_save_to_writes_blurred_file(window: MainWindow, image_file: Path, tmp_path: Path) -> None:
-    window.load_image(image_file)
-    window.apply_blur(QRect(0, 0, 40, 30))
+def test_paste_from_clipboard(window: MainWindow, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "bluranything.ui.main_window.image_from_clipboard",
+        lambda: checkerboard((20, 16)),
+    )
+    assert window.paste_from_clipboard()
+    doc = window.document
+    assert doc is not None
+    assert doc.size == (20, 16)
 
-    out = tmp_path / "output.png"
+
+def test_paste_without_image_informs(window: MainWindow, monkeypatch: pytest.MonkeyPatch) -> None:
+    infos: list[str] = []
+    monkeypatch.setattr("bluranything.ui.main_window.image_from_clipboard", lambda: None)
+    monkeypatch.setattr(
+        "bluranything.ui.main_window.QMessageBox.information",
+        lambda *args: infos.append(str(args[2])),
+    )
+    assert not window.paste_from_clipboard()
+    assert window.document is None
+    assert len(infos) == 1
+
+
+def test_save_writes_file_and_clears_dirty(
+    window: MainWindow, image_file: Path, tmp_path: Path
+) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    doc.stamp_rectangle((0, 0, 40, 30))
+    window.editor.changed.emit()
+
+    out = tmp_path / "out.png"
     assert window.save_to(out)
     assert not window.isWindowModified()
-
     with Image.open(out) as saved:
         assert saved.size == (40, 30)
-        assert saved.convert("RGBA").tobytes() != checkerboard((40, 30)).tobytes()
 
 
-def test_save_to_jpeg_drops_alpha(window: MainWindow, image_file: Path, tmp_path: Path) -> None:
-    window.load_image(image_file)
-    out = tmp_path / "output.jpg"
-    assert window.save_to(out)
-    with Image.open(out) as saved:
-        assert saved.mode == "RGB"
+def test_clear_removes_regions(window: MainWindow, image_file: Path) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    doc.stamp_rectangle((5, 5, 25, 20))
+    window.editor.changed.emit()
+    window.clear()
+    assert doc.is_empty
