@@ -16,3 +16,20 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  # Run the remaining gates (strict types, dead code) through the project venv so
+  # a commit can never land with type errors or dead code — CI just double-checks.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict)
+        entry: .venv/bin/python -m mypy src tests scripts
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: vulture
+        name: vulture (dead code)
+        entry: .venv/bin/python -m vulture
+        language: system
+        pass_filenames: false
+        always_run: true

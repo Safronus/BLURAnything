@@ -33,8 +33,8 @@ make check    # = lint + type + test + deadcode
 | `make deadcode` | vulture dead-code scan                        |
 | `make audit`    | pip-audit for vulnerable dependencies         |
 
-Pre-commit hooks (installed by `make setup`) run ruff and basic hygiene checks on
-every commit.
+Pre-commit hooks (installed by `make setup`) run ruff, mypy, vulture and basic
+hygiene checks on every commit, so a red commit never reaches CI.
 
 ## Conventions
 
