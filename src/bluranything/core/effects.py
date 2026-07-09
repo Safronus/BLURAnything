@@ -16,6 +16,8 @@ from typing import Protocol, runtime_checkable
 from PIL import Image, ImageFilter
 
 DEFAULT_BLUR_RADIUS = 12
+DEFAULT_PIXEL_SIZE = 12
+DEFAULT_FILL_COLOR = (0, 0, 0, 255)
 
 
 @runtime_checkable
@@ -35,3 +37,30 @@ class GaussianBlurEffect:
         if self.radius <= 0:
             return image.copy()
         return image.filter(ImageFilter.GaussianBlur(self.radius))
+
+
+@dataclass(frozen=True)
+class PixelateEffect:
+    """Mosaic / pixelation; larger *block* means coarser blocks."""
+
+    block: int = DEFAULT_PIXEL_SIZE
+
+    def apply(self, image: Image.Image) -> Image.Image:
+        if self.block <= 1:
+            return image.copy()
+        width, height = image.size
+        small = image.resize(
+            (max(1, width // self.block), max(1, height // self.block)),
+            Image.Resampling.BILINEAR,
+        )
+        return small.resize((width, height), Image.Resampling.NEAREST)
+
+
+@dataclass(frozen=True)
+class SolidFillEffect:
+    """Opaque fill — the strongest, irreversible redaction (a censor bar)."""
+
+    color: tuple[int, int, int, int] = DEFAULT_FILL_COLOR
+
+    def apply(self, image: Image.Image) -> Image.Image:
+        return Image.new("RGBA", image.size, self.color)

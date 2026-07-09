@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from bluranything.core.mask import feather, new_mask, normalize_box, stamp_rectangle
 
 
@@ -25,8 +27,10 @@ def test_feather_softens_edges() -> None:
     stamp_rectangle(mask, (10, 10, 20, 20))
     soft = feather(mask, 3)
     assert soft.getbbox() != mask.getbbox()  # blur spreads beyond the crisp edge
-    assert soft.getpixel((15, 15)) > 150  # core stays strongly opaque
-    assert 0 < soft.getpixel((21, 15)) < 255  # just outside the edge is partial
+    core = cast(int, soft.getpixel((15, 15)))
+    edge = cast(int, soft.getpixel((21, 15)))
+    assert core > 150  # core stays strongly opaque
+    assert 0 < edge < 255  # just outside the crisp edge is partial
 
 
 def test_feather_zero_returns_copy() -> None:

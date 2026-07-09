@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from bluranything.core.effects import GaussianBlurEffect
+from bluranything.core.effects import (
+    GaussianBlurEffect,
+    PixelateEffect,
+    SolidFillEffect,
+)
 from tests.helpers import checkerboard
 
 
@@ -20,6 +24,27 @@ def test_zero_radius_is_a_noop_copy() -> None:
     assert out is not image
 
 
+def test_pixelate_changes_image_but_keeps_size() -> None:
+    image = checkerboard((32, 32))
+    out = PixelateEffect(8).apply(image)
+    assert out.size == image.size
+    assert out.tobytes() != image.tobytes()
+
+
+def test_pixelate_block_one_is_a_noop_copy() -> None:
+    image = checkerboard()
+    out = PixelateEffect(1).apply(image)
+    assert out.tobytes() == image.tobytes()
+    assert out is not image
+
+
+def test_solid_fill_replaces_every_pixel() -> None:
+    out = SolidFillEffect((0, 0, 0, 255)).apply(checkerboard((10, 10)))
+    assert out.size == (10, 10)
+    assert out.getextrema() == ((0, 0), (0, 0), (0, 0), (255, 255))
+
+
 def test_effects_compare_by_value() -> None:
     assert GaussianBlurEffect(5) == GaussianBlurEffect(5)
     assert GaussianBlurEffect(5) != GaussianBlurEffect(6)
+    assert PixelateEffect(5) != PixelateEffect(9)

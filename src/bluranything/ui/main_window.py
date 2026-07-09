@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QLabel,
     QMainWindow,
@@ -20,13 +21,28 @@ from PySide6.QtWidgets import (
 from bluranything import __version__
 from bluranything.core import imageio
 from bluranything.core.document import Document, EdgeMode
-from bluranything.core.effects import DEFAULT_BLUR_RADIUS, GaussianBlurEffect
+from bluranything.core.effects import (
+    DEFAULT_BLUR_RADIUS,
+    DEFAULT_PIXEL_SIZE,
+    Effect,
+    GaussianBlurEffect,
+    PixelateEffect,
+    SolidFillEffect,
+)
 from bluranything.ui.clipboard import image_from_clipboard
 from bluranything.ui.editor_canvas import EditorCanvas
 from bluranything.ui.scaled_view import ScaledImageView
 
 APP_TITLE = "BLURAnything"
 DEFAULT_FEATHER = 6
+
+#: Selectable effects: (combo label, key, slider caption, slider min, max, default).
+#: A zero range means the intensity slider does not apply (e.g. solid fill).
+_EFFECT_KINDS: tuple[tuple[str, str, str, int, int, int], ...] = (
+    ("Blur", "blur", "Blur", 1, 100, DEFAULT_BLUR_RADIUS),
+    ("Pixelate", "pixelate", "Pixel size", 2, 64, DEFAULT_PIXEL_SIZE),
+    ("Solid fill", "solid", "Solid", 0, 0, 0),
+)
 
 _OPEN_FILTER = "Images (" + " ".join(f"*{ext}" for ext in imageio.INPUT_EXTENSIONS) + ")"
 _SAVE_FILTER = ";;".join(
@@ -61,6 +77,10 @@ class MainWindow(QMainWindow):
         splitter.setSizes([600, 600])
         self.setCentralWidget(splitter)
 
+        self._effect_combo = QComboBox(self)
+        for label, key, *_ in _EFFECT_KINDS:
+            self._effect_combo.addItem(label, key)
+        self._intensity_label = QLabel("Blur", self)
         self._intensity = self._make_slider(1, 100, DEFAULT_BLUR_RADIUS)
         self._feather = self._make_slider(0, 40, DEFAULT_FEATHER)
         self._soft_edges = QCheckBox("Soft edges", self)
@@ -70,6 +90,7 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._build_toolbar()
         self._connect_controls()
+        self._configure_intensity()
 
         self.setStatusBar(self.statusBar())
         self.statusBar().showMessage("Open an image or paste (⌘V), then drag to blur.")
@@ -142,7 +163,8 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._paste_action)
         toolbar.addAction(self._save_action)
         toolbar.addSeparator()
-        toolbar.addWidget(QLabel("Blur", self))
+        toolbar.addWidget(self._effect_combo)
+        toolbar.addWidget(self._intensity_label)
         toolbar.addWidget(self._intensity)
         toolbar.addWidget(self._soft_edges)
         toolbar.addWidget(QLabel("Feather", self))
@@ -153,6 +175,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
     def _connect_controls(self) -> None:
+        self._effect_combo.currentIndexChanged.connect(self._on_effect_kind_changed)
         self._intensity.valueChanged.connect(self._on_effect_changed)
         self._feather.valueChanged.connect(self._on_effect_changed)
         self._soft_edges.toggled.connect(self._on_effect_changed)
@@ -224,8 +247,34 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- helpers
 
-    def _current_effect(self) -> GaussianBlurEffect:
-        return GaussianBlurEffect(self._intensity.value())
+    def _current_effect(self) -> Effect:
+        kind = self._effect_combo.currentData()
+        value = self._intensity.value()
+        if kind == "pixelate":
+            return PixelateEffect(value)
+        if kind == "solid":
+            return SolidFillEffect()
+        return GaussianBlurEffect(value)
+
+    def _configure_intensity(self) -> None:
+        """Match the intensity slider's range, caption and state to the effect."""
+        kind = self._effect_combo.currentData()
+        _, _, caption, minimum, maximum, default = next(
+            spec for spec in _EFFECT_KINDS if spec[1] == kind
+        )
+        self._intensity_label.setText(caption)
+        applies = maximum > 0
+        self._intensity.setEnabled(applies)
+        if applies:
+            value = min(max(self._intensity.value(), minimum), maximum) or default
+            self._intensity.blockSignals(True)
+            self._intensity.setRange(minimum, maximum)
+            self._intensity.setValue(value)
+            self._intensity.blockSignals(False)
+
+    def _on_effect_kind_changed(self) -> None:
+        self._configure_intensity()
+        self._on_effect_changed()
 
     def _apply_settings(self) -> None:
         if self._document is None:

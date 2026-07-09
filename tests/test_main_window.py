@@ -128,3 +128,19 @@ def test_clear_removes_regions(window: MainWindow, image_file: Path) -> None:
     window.editor.changed.emit()
     window.clear()
     assert doc.is_empty
+
+
+def test_effect_selector_updates_document(window: MainWindow, image_file: Path) -> None:
+    from bluranything.core.effects import PixelateEffect, SolidFillEffect
+
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+
+    window._effect_combo.setCurrentIndex(1)  # Pixelate
+    assert isinstance(doc.effect, PixelateEffect)
+    assert window._intensity.isEnabled()
+
+    window._effect_combo.setCurrentIndex(2)  # Solid fill
+    assert isinstance(doc.effect, SolidFillEffect)
+    assert not window._intensity.isEnabled()  # solid fill has no intensity
