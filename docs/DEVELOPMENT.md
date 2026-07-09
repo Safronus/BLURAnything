@@ -80,6 +80,6 @@ PATCH = fixes.
 
 - **`qt.qpa.plugin: could not load...` in tests/CI** — tests force
   `QT_QPA_PLATFORM=offscreen`; locally you can do the same for headless runs.
-- **Screenshot is black/empty on macOS** — grant Screen Recording permission
-  (System Settings → Privacy & Security) to your terminal / the app.
+- **HEIC files won't open** — HEIC support comes from `pillow-heif` (a declared
+  dependency); make sure the dev install (`make setup`) completed.
 - **Broken `.venv` symlink** — re-run `./scripts/setup-venv.sh`.

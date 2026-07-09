@@ -11,22 +11,27 @@ them. Built with Python and PySide6 (Qt 6). Cross-platform: macOS, Windows, Linu
 
 ## Features
 
-- Open an image (PNG, JPEG, BMP, WebP) and blur any region by simply dragging a rectangle
-- Capture a screenshot of your primary screen straight into the editor
-- Adjustable Gaussian blur radius (1–100 px)
-- Undo for blur operations (up to 20 steps), unsaved-changes protection
-- Save or Save As, with automatic alpha handling for JPEG
+- Open images (PNG, TIFF, JPG, HEIC, BMP, WebP) or paste from the clipboard (⌘V)
+- Redact regions with **rectangle, ellipse, polygon, freehand lasso and brush** tools
+- Effects: **Gaussian blur, pixelate/mosaic and solid fill**, with switchable
+  soft (feathered) or hard edges
+- Non-destructive editing with a live before/after — editor on the left, clean
+  result preview on the right
+- Undo / redo / clear, adjustable effect intensity and brush size
+- Export to PNG/TIFF/JPG/HEIC/WebP/BMP or **PDF**, or copy the result to the clipboard
+- **Autosave** with recovery after an unexpected close
+- Dark, macOS-like theme
 
-> **Privacy note:** Gaussian blur is great for hiding faces and visual context, but heavily
-> blurred *text* can sometimes be partially reconstructed. Irreversible modes (pixelate,
-> solid fill) are on the roadmap — see the issue tracker.
+> **Privacy note:** Gaussian blur hides faces and visual context well, but heavily
+> blurred *text* can sometimes be partially reconstructed. For sensitive text, prefer
+> the **pixelate** or **solid fill** effect, which are not reversible.
 
 ## Installation
 
 Requires Python 3.11+.
 
 ```bash
-pip install "bluranything @ git+https://github.com/Safronus/BLURAnything@v0.1.0"
+pip install "bluranything @ git+https://github.com/Safronus/BLURAnything@v0.2.0"
 ```
 
 Or grab the wheel from the [latest release](https://github.com/Safronus/BLURAnything/releases)
@@ -40,13 +45,15 @@ bluranything photo.png       # open an image right away
 bluranything --version
 ```
 
-1. **Open** an image (`Ctrl+O` / `⌘O`) or **capture a screenshot** (`Ctrl+Shift+C`).
-2. **Drag** a rectangle over anything you want to hide — it blurs immediately.
-3. Adjust the **radius** in the toolbar, **undo** (`Ctrl+Z` / `⌘Z`) if needed.
-4. **Save** (`Ctrl+S` / `⌘S`).
+1. **Open** an image (`Ctrl+O` / `⌘O`) or **paste** one from the clipboard (`Ctrl+V` / `⌘V`).
+2. Pick a **tool** (rectangle, ellipse, polygon, lasso, brush) and an **effect**
+   (blur, pixelate, solid fill) in the toolbar, then draw over anything to hide.
+3. Tune **intensity**, **brush size** and **soft/hard edges**; **undo / redo**
+   (`⌘Z` / `⌘⇧Z`) as needed.
+4. **Save** (`⌘S`) to PNG/TIFF/JPG/HEIC/WebP/BMP/PDF, or **copy** the result (`⌘C`).
 
-> **macOS:** screenshot capture requires the Screen Recording permission
-> (System Settings → Privacy & Security → Screen Recording).
+> **macOS tip:** press ⌘⇧⌃4 to copy a screen area to the clipboard, then paste it
+> straight into BLURAnything with ⌘V.
 
 ## Development
 
