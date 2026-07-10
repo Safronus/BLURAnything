@@ -115,3 +115,24 @@ def face_boxes(
     """Detected faces as expanded (left, top, right, bottom) boxes ready to blur."""
     faces = detect_faces(image, backend=backend, sensitivity=sensitivity)
     return [face.expanded(margin, image.size) for face in faces]
+
+
+def face_at(
+    image: Image.Image,
+    point: tuple[float, float],
+    *,
+    backend: str = DEFAULT_BACKEND,
+    sensitivity: float = DEFAULT_SENSITIVITY,
+    margin: float = DEFAULT_MARGIN,
+) -> Box | None:
+    """The expanded box of the face under *point*, or None if none is there."""
+    px, py = point
+    hits = [
+        face
+        for face in detect_faces(image, backend=backend, sensitivity=sensitivity)
+        if face.left <= px <= face.left + face.width and face.top <= py <= face.top + face.height
+    ]
+    if not hits:
+        return None
+    smallest = min(hits, key=lambda face: face.width * face.height)
+    return smallest.expanded(margin, image.size)

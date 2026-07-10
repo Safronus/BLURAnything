@@ -189,6 +189,29 @@ def test_blur_all_faces_reports_when_none(
     assert doc.is_empty
 
 
+def test_face_tool_click_blurs_single_face(
+    window: MainWindow, image_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    monkeypatch.setattr("bluranything.core.faces.face_at", lambda *args, **kwargs: (2, 2, 20, 20))
+    window._on_face_clicked(QPointF(10, 10))
+    assert not doc.is_empty
+    assert window.isWindowModified()
+
+
+def test_face_tool_click_without_face(
+    window: MainWindow, image_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    monkeypatch.setattr("bluranything.core.faces.face_at", lambda *args, **kwargs: None)
+    window._on_face_clicked(QPointF(10, 10))
+    assert doc.is_empty
+
+
 def test_drop_loads_image(window: MainWindow, tmp_path: Path) -> None:
     image = tmp_path / "drop.png"
     checkerboard((32, 24)).save(image)

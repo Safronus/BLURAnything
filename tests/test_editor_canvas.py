@@ -96,6 +96,14 @@ def test_switching_tool_cancels_gesture(qtbot: QtBot) -> None:
     assert document.is_empty
 
 
+def test_face_tool_emits_click(qtbot: QtBot) -> None:
+    canvas, _ = make_canvas(qtbot)
+    canvas.set_tool(Tool.FACE)
+    with qtbot.waitSignal(canvas.face_clicked) as blocker:
+        canvas.begin_gesture(QPointF(12, 9))
+    assert blocker.args == [QPointF(12, 9)]
+
+
 def test_lasso_thins_dense_points(qtbot: QtBot) -> None:
     canvas, _ = make_canvas(qtbot)
     canvas.set_tool(Tool.LASSO)

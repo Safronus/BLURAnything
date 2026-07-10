@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPointF, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -54,6 +54,7 @@ _TOOLS: tuple[tuple[str, Tool], ...] = (
     (strings.TOOL_POLYGON, Tool.POLYGON),
     (strings.TOOL_LASSO, Tool.LASSO),
     (strings.TOOL_BRUSH, Tool.BRUSH),
+    (strings.TOOL_FACE, Tool.FACE),
 )
 
 _TOOL_HINTS = {
@@ -62,6 +63,7 @@ _TOOL_HINTS = {
     Tool.POLYGON: strings.TOOL_HINT_POLYGON,
     Tool.LASSO: strings.TOOL_HINT_LASSO,
     Tool.BRUSH: strings.TOOL_HINT_BRUSH,
+    Tool.FACE: strings.TOOL_HINT_FACE,
 }
 
 #: Face-detection backends (key stored in each menu action's data).
@@ -113,6 +115,7 @@ class MainWindow(QMainWindow):
         self._editor = EditorCanvas(self)
         self._editor.changed.connect(self._on_edit)
         self._editor.file_dropped.connect(self._on_file_dropped)
+        self._editor.face_clicked.connect(self._on_face_clicked)
         self._preview = ScaledImageView(placeholder=strings.PLACEHOLDER_PREVIEW, parent=self)
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
@@ -388,6 +391,30 @@ class MainWindow(QMainWindow):
         self._dirty = True
         self._after_change()
         self.statusBar().showMessage(strings.status_faces_blurred(len(boxes)))
+
+    def _on_face_clicked(self, point: QPointF) -> None:
+        """Blur just the face under the clicked point (Face tool)."""
+        if self._document is None:
+            return
+        from bluranything.core import faces  # lazy: loads OpenCV on first use
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            box = faces.face_at(
+                self._document.base,
+                (point.x(), point.y()),
+                backend=self._face_backend,
+                sensitivity=self._face_sensitivity,
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
+        if box is None:
+            self.statusBar().showMessage(strings.FACE_NONE_HERE)
+            return
+        self._document.stamp_faces([box])
+        self._dirty = True
+        self._after_change()
+        self.statusBar().showMessage(strings.FACE_BLURRED)
 
     @property
     def document(self) -> Document | None:

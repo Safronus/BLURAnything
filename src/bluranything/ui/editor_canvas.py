@@ -54,6 +54,7 @@ class Tool(Enum):
     POLYGON = "polygon"
     LASSO = "lasso"
     BRUSH = "brush"
+    FACE = "face"
 
 
 def _pt(point: QPointF) -> Point:
@@ -66,6 +67,8 @@ class EditorCanvas(ScaledImageView):
     changed = Signal()
     #: Emitted with the path of an image file dropped onto the canvas.
     file_dropped = Signal(str)
+    #: Emitted (image-space point) when the Face tool is clicked on the canvas.
+    face_clicked = Signal(QPointF)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(placeholder=strings.PLACEHOLDER_EDITOR, parent=parent)
@@ -99,6 +102,10 @@ class EditorCanvas(ScaledImageView):
     def set_tool(self, tool: Tool) -> None:
         self.cancel()
         self._tool = tool
+        clickable = tool is Tool.FACE
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor
+        )
         self.update()
 
     def set_brush_radius(self, radius: int) -> None:
@@ -109,6 +116,9 @@ class EditorCanvas(ScaledImageView):
 
     def begin_gesture(self, point: QPointF) -> None:
         if self._document is None:
+            return
+        if self._tool is Tool.FACE:
+            self.face_clicked.emit(point)
             return
         if self._tool is Tool.POLYGON:
             self._vertices.append(point)

@@ -31,6 +31,7 @@ TOOL_ELLIPSE = "Elipsa"
 TOOL_POLYGON = "Mnohoúhelník"
 TOOL_LASSO = "Laso"
 TOOL_BRUSH = "Štětec"
+TOOL_FACE = "Obličej"
 
 # --- Effect names + intensity-slider captions ---
 EFFECT_BLUR = "Rozostření"
@@ -56,6 +57,7 @@ TOOL_HINT_ELLIPSE = "Elipsa — tažením rozmažete oválnou oblast."
 TOOL_HINT_POLYGON = "Mnohoúhelník — klikáním přidávejte body, dvojklikem uzavřete."
 TOOL_HINT_LASSO = "Laso — tažením nakreslete volnou oblast."
 TOOL_HINT_BRUSH = "Štětec — tažením malujte rozostření."
+TOOL_HINT_FACE = "Obličej — klikněte na obličej a rozmaže se."
 
 # --- Faces ---
 ACTION_BLUR_FACES = "Rozmazat &obličeje"
@@ -68,6 +70,8 @@ SENSITIVITY_MEDIUM = "Střední"
 SENSITIVITY_HIGH = "Vysoká"
 FACES_NONE = "Žádný obličej nenalezen."
 FACES_DETECTING = "Hledám obličeje…"
+FACE_BLURRED = "Obličej rozmazán"
+FACE_NONE_HERE = "Na tomto místě není obličej."
 
 
 def _faces_word(count: int) -> str:

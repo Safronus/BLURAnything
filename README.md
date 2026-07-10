@@ -14,8 +14,8 @@ them. Built with Python and PySide6 (Qt 6). Cross-platform: macOS, Windows, Linu
 - Open images (PNG, TIFF, JPG, HEIC, BMP, WebP), paste from the clipboard (⌘V),
   or drag & drop a file from Finder
 - Redact regions with **rectangle, ellipse, polygon, freehand lasso and brush** tools
-- **Automatic face blur** — detect and blur every face at once (offline, switchable
-  YuNet/Haar detector)
+- **Automatic face blur** — detect and blur every face at once, or click a single
+  face with the Face tool (offline, switchable YuNet/Haar detector)
 - Effects: **Gaussian blur, pixelate/mosaic and solid fill**, with switchable
   soft (feathered) or hard edges
 - Non-destructive editing with a live before/after — editor on the left, clean
