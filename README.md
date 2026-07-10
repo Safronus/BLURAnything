@@ -16,6 +16,8 @@ them. Built with Python and PySide6 (Qt 6). Cross-platform: macOS, Windows, Linu
 - Redact regions with **rectangle, ellipse, polygon, freehand lasso and brush** tools
 - **Automatic face blur** — detect and blur every face at once, or click a single
   face with the Face tool (offline, switchable YuNet/Haar detector)
+- **Batch mode** — open many images and switch between them via a thumbnail
+  navigator; each keeps its own edits, and *Export all* saves them in one step
 - Effects: **Gaussian blur, pixelate/mosaic and solid fill**, with switchable
   soft (feathered) or hard edges
 - Non-destructive editing with a live before/after — editor on the left, clean

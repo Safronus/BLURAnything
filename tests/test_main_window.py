@@ -19,9 +19,10 @@ from tests.helpers import checkerboard
 
 
 def _reset_dirty(window: MainWindow) -> None:
-    # Clear the dirty flag before qtbot closes the window at teardown, so the
-    # confirm dialog never opens and blocks the headless run.
-    window._dirty = False
+    # Clear every item's dirty flag before qtbot closes the window at teardown,
+    # so the confirm dialog never opens and blocks the headless run.
+    for item in window._items:
+        item.dirty = False
 
 
 @pytest.fixture
@@ -36,6 +37,16 @@ def image_file(tmp_path: Path) -> Path:
     path = tmp_path / "input.png"
     checkerboard((40, 30)).save(path)
     return path
+
+
+@pytest.fixture
+def two_images(tmp_path: Path) -> list[Path]:
+    paths = []
+    for i in range(2):
+        path = tmp_path / f"img{i}.png"
+        checkerboard((30 + i * 4, 20 + i * 4)).save(path)
+        paths.append(path)
+    return paths
 
 
 def test_initial_state_has_no_document(window: MainWindow) -> None:
@@ -210,6 +221,63 @@ def test_face_tool_click_without_face(
     monkeypatch.setattr("bluranything.core.faces.face_at", lambda *args, **kwargs: None)
     window._on_face_clicked(QPointF(10, 10))
     assert doc.is_empty
+
+
+def test_gallery_holds_multiple_images(window: MainWindow, two_images: list[Path]) -> None:
+    for path in two_images:
+        window.load_path(path)
+    assert len(window._items) == 2
+    assert window._nav.count() == 2
+    doc = window.document
+    assert doc is not None
+    assert doc.size == (34, 24)  # the second (last-loaded) image is current
+
+
+def test_switching_images_preserves_edits(window: MainWindow, two_images: list[Path]) -> None:
+    window.load_path(two_images[0])
+    first = window.document
+    assert first is not None
+    first.stamp_rectangle((2, 2, 12, 12))
+    window.editor.changed.emit()
+
+    window.load_path(two_images[1])
+    assert window.document is not None
+    assert window.document.is_empty  # the new image starts clean
+
+    window._select_item(0)
+    assert window.document is first
+    assert not first.is_empty  # the first image kept its edit
+
+
+def test_remove_current_image(window: MainWindow, two_images: list[Path]) -> None:
+    for path in two_images:
+        window.load_path(path)
+    window.remove_current()
+    assert len(window._items) == 1
+    assert window._nav.count() == 1
+    assert window.document is not None
+
+
+def test_removing_last_image_clears_editor(window: MainWindow, image_file: Path) -> None:
+    window.load_path(image_file)
+    window.remove_current()
+    assert window.document is None
+    assert window._nav.count() == 0
+
+
+def test_export_all_writes_every_image(
+    window: MainWindow, two_images: list[Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for path in two_images:
+        window.load_path(path)
+    out = tmp_path / "export"
+    out.mkdir()
+    monkeypatch.setattr(
+        "bluranything.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *args, **kwargs: str(out),
+    )
+    window._export_all()
+    assert len(list(out.glob("*_blur.png"))) == 2
 
 
 def test_drop_loads_image(window: MainWindow, tmp_path: Path) -> None:

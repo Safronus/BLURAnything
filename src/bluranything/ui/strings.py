@@ -18,6 +18,8 @@ MENU_HELP = "Nápo&věda"
 ACTION_OPEN = "&Otevřít…"
 ACTION_PASTE = "&Vložit"
 ACTION_SAVE = "&Uložit…"
+ACTION_EXPORT_ALL = "&Exportovat vše…"
+ACTION_CLOSE_IMAGE = "Zavřít o&brázek"
 ACTION_COPY = "&Kopírovat výsledek"
 ACTION_CLEAR = "Vy&mazat vše"
 ACTION_UNDO = "&Zpět"
@@ -104,9 +106,22 @@ def status_saved(name: str) -> str:
     return f"Uloženo: {name}"
 
 
+def _images_word(count: int) -> str:
+    if count == 1:
+        return "obrázek"
+    if 2 <= count <= 4:
+        return "obrázky"
+    return "obrázků"
+
+
+def status_exported(count: int) -> str:
+    return f"Exportováno {count} {_images_word(count)}"
+
+
 # --- Dialogs ---
-DIALOG_OPEN_TITLE = "Otevřít obrázek"
+DIALOG_OPEN_TITLE = "Otevřít obrázky"
 DIALOG_SAVE_TITLE = "Uložit obrázek"
+DIALOG_EXPORT_ALL_TITLE = "Exportovat vše do složky"
 DISCARD_QUESTION = "Máte neuložené změny. Zahodit je?"
 PASTE_NO_IMAGE = "Ve schránce není žádný obrázek."
 RECOVERY_QUESTION = "Obnovit neuloženou práci z minulého sezení?"

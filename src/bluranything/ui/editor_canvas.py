@@ -243,19 +243,20 @@ class EditorCanvas(ScaledImageView):
     # ------------------------------------------------------------ drag & drop
 
     @staticmethod
-    def _dropped_image_path(mime: QMimeData) -> Path | None:
-        """First local image file among the dragged URLs, if any."""
+    def _dropped_image_paths(mime: QMimeData) -> list[Path]:
+        """All local image files among the dragged URLs."""
         if not mime.hasUrls():
-            return None
+            return []
+        paths: list[Path] = []
         for url in mime.urls():
             if url.isLocalFile():
                 path = Path(url.toLocalFile())
                 if path.suffix.lower() in INPUT_EXTENSIONS:
-                    return path
-        return None
+                    paths.append(path)
+        return paths
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if self._dropped_image_path(event.mimeData()) is not None:
+        if self._dropped_image_paths(event.mimeData()):
             self._drag_active = True
             self.update()
             event.acceptProposedAction()
@@ -275,10 +276,11 @@ class EditorCanvas(ScaledImageView):
     def dropEvent(self, event: QDropEvent) -> None:
         self._drag_active = False
         self.update()
-        path = self._dropped_image_path(event.mimeData())
-        if path is not None:
+        paths = self._dropped_image_paths(event.mimeData())
+        if paths:
             event.acceptProposedAction()
-            self.file_dropped.emit(str(path))
+            for path in paths:
+                self.file_dropped.emit(str(path))
         else:
             event.ignore()
 

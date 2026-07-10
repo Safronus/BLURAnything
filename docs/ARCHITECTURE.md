@@ -8,7 +8,7 @@
 ├──────────────────────────────────────────────────────────────┤
 │ ui/ — Qt layer (PySide6)                                     │
 │   theme.py         dark macOS-like palette + stylesheet      │
-│   main_window.py   toolbar, tools, effects, autosave, state  │
+│   main_window.py   toolbar, tools, effects, gallery, state   │
 │   editor_canvas.py interactive canvas: tool gestures+overlay │
 │   scaled_view.py   shared scaled image view + coord mapping  │
 │   clipboard.py     paste / copy images                       │

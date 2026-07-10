@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
+from PySide6.QtCore import QPointF, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QSlider,
@@ -32,7 +35,20 @@ from bluranything.core.effects import (
 from bluranything.ui import strings
 from bluranything.ui.clipboard import image_from_clipboard, image_to_clipboard
 from bluranything.ui.editor_canvas import DEFAULT_BRUSH_RADIUS, EditorCanvas, Tool
+from bluranything.ui.qt_image import pil_to_qpixmap
 from bluranything.ui.scaled_view import ScaledImageView
+
+THUMBNAIL_SIZE = (112, 84)
+
+
+@dataclass
+class _GalleryItem:
+    """One loaded image in the batch gallery."""
+
+    document: Document
+    path: Path | None
+    dirty: bool = False
+
 
 APP_TITLE = strings.APP_TITLE
 DEFAULT_FEATHER = 6
@@ -100,10 +116,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self, autosave_dir: Path | None = None) -> None:
         super().__init__()
-        self._document: Document | None = None
-        self._path: Path | None = None
+        self._items: list[_GalleryItem] = []  # the batch gallery
+        self._current = -1  # index of the active item, or -1 when empty
         self._source_dir: Path | None = None  # folder the current image was loaded from
-        self._dirty = False
         self._face_backend = _DEFAULT_FACE_BACKEND
         self._face_sensitivity = _DEFAULT_FACE_SENSITIVITY
         self._autosave_dir = autosave_dir or _DEFAULT_AUTOSAVE_DIR
@@ -118,10 +133,21 @@ class MainWindow(QMainWindow):
         self._editor.face_clicked.connect(self._on_face_clicked)
         self._preview = ScaledImageView(placeholder=strings.PLACEHOLDER_PREVIEW, parent=self)
 
+        self._nav = QListWidget(self)
+        self._nav.setIconSize(QSize(*THUMBNAIL_SIZE))
+        self._nav.setMinimumWidth(132)
+        self._nav.setMaximumWidth(240)
+        self._nav.setUniformItemSizes(True)
+        self._nav.currentRowChanged.connect(self._on_nav_row_changed)
+
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        splitter.addWidget(self._nav)
         splitter.addWidget(self._editor)
         splitter.addWidget(self._preview)
-        splitter.setSizes([600, 600])
+        splitter.setSizes([170, 505, 505])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 1)
         self.setCentralWidget(splitter)
 
         self._tool_combo = QComboBox(self)
@@ -176,6 +202,13 @@ class MainWindow(QMainWindow):
         self._save_action.setShortcut(QKeySequence.StandardKey.Save)
         self._save_action.triggered.connect(self._save)
 
+        self._export_all_action = QAction(strings.ACTION_EXPORT_ALL, self)
+        self._export_all_action.triggered.connect(self._export_all)
+
+        self._close_image_action = QAction(strings.ACTION_CLOSE_IMAGE, self)
+        self._close_image_action.setShortcut(QKeySequence.StandardKey.Close)
+        self._close_image_action.triggered.connect(self.remove_current)
+
         self._undo_action = QAction(strings.ACTION_UNDO, self)
         self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self._undo_action.triggered.connect(self.undo)
@@ -208,6 +241,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._paste_action)
         file_menu.addSeparator()
         file_menu.addAction(self._save_action)
+        file_menu.addAction(self._export_all_action)
+        file_menu.addAction(self._close_image_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -266,6 +301,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._open_action)
         toolbar.addAction(self._paste_action)
         toolbar.addAction(self._save_action)
+        toolbar.addAction(self._export_all_action)
         toolbar.addSeparator()
         toolbar.addWidget(self._tool_combo)
         toolbar.addWidget(self._brush_label)
@@ -303,28 +339,24 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------- public API
 
     def load_path(self, path: Path) -> bool:
-        """Open *path* as the working image. Returns True on success."""
-        if not self._confirm_discard():
-            return False
+        """Add *path* to the gallery and make it current. Returns True on success."""
         try:
             image = imageio.load(path)
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self, APP_TITLE, strings.open_error(path, exc))
             return False
-        self._set_document(Document(image), Path(path))
+        self._add_item(Document(image), Path(path))
         self._source_dir = Path(path).parent
         self.statusBar().showMessage(strings.status_opened(path.name, image.width, image.height))
         return True
 
     def paste_from_clipboard(self) -> bool:
-        """Load an image from the clipboard. Returns True on success."""
-        if not self._confirm_discard():
-            return False
+        """Add an image from the clipboard to the gallery. Returns True on success."""
         image = image_from_clipboard()
         if image is None:
             QMessageBox.information(self, APP_TITLE, strings.PASTE_NO_IMAGE)
             return False
-        self._set_document(Document(image), None)
+        self._add_item(Document(image), None)
         self.statusBar().showMessage(strings.status_pasted(image.width, image.height))
         return True
 
@@ -342,6 +374,7 @@ class MainWindow(QMainWindow):
             return False
         self._path = path
         self._dirty = False
+        self._update_current_label()
         self._clear_autosave()
         self._refresh()
         self.statusBar().showMessage(strings.status_saved(path.name))
@@ -416,6 +449,41 @@ class MainWindow(QMainWindow):
         self._after_change()
         self.statusBar().showMessage(strings.FACE_BLURRED)
 
+    # ---------------------------------------------------------- gallery state
+
+    @property
+    def _current_item(self) -> _GalleryItem | None:
+        if 0 <= self._current < len(self._items):
+            return self._items[self._current]
+        return None
+
+    @property
+    def _document(self) -> Document | None:
+        item = self._current_item
+        return item.document if item is not None else None
+
+    @property
+    def _path(self) -> Path | None:
+        item = self._current_item
+        return item.path if item is not None else None
+
+    @_path.setter
+    def _path(self, value: Path | None) -> None:
+        item = self._current_item
+        if item is not None:
+            item.path = value
+
+    @property
+    def _dirty(self) -> bool:
+        item = self._current_item
+        return item.dirty if item is not None else False
+
+    @_dirty.setter
+    def _dirty(self, value: bool) -> None:
+        item = self._current_item
+        if item is not None:
+            item.dirty = value
+
     @property
     def document(self) -> Document | None:
         return self._document
@@ -423,6 +491,61 @@ class MainWindow(QMainWindow):
     @property
     def editor(self) -> EditorCanvas:
         return self._editor
+
+    # -------------------------------------------------------------- gallery
+
+    def _thumbnail(self, document: Document) -> QIcon:
+        thumb = document.base.copy()
+        thumb.thumbnail(THUMBNAIL_SIZE)
+        return QIcon(pil_to_qpixmap(thumb))
+
+    def _add_item(self, document: Document, path: Path | None) -> None:
+        """Append a loaded image to the gallery and make it current."""
+        self._items.append(_GalleryItem(document, path))
+        label = path.name if path is not None else strings.TITLE_PASTED
+        self._nav.blockSignals(True)
+        self._nav.addItem(QListWidgetItem(self._thumbnail(document), label))
+        self._nav.blockSignals(False)
+        self._select_item(len(self._items) - 1)
+
+    def _select_item(self, index: int) -> None:
+        self._current = index
+        self._nav.blockSignals(True)
+        self._nav.setCurrentRow(index)
+        self._nav.blockSignals(False)
+        document = self._document
+        if document is not None:
+            self._apply_settings()
+        self._editor.set_document(document)
+        self._preview.set_image(document.render() if document is not None else None)
+        self._refresh()
+
+    def _on_nav_row_changed(self, row: int) -> None:
+        if 0 <= row < len(self._items) and row != self._current:
+            self._select_item(row)
+
+    def remove_current(self) -> None:
+        """Remove the active image from the gallery."""
+        item = self._current_item
+        if item is None:
+            return
+        if item.dirty and not self._ask_discard():
+            return
+        index = self._current
+        self._items.pop(index)
+        self._nav.blockSignals(True)
+        self._nav.takeItem(index)
+        self._nav.blockSignals(False)
+        if self._items:
+            self._select_item(min(index, len(self._items) - 1))
+        else:
+            self._current = -1
+            self._editor.set_document(None)
+            self._preview.set_image(None)
+            self._refresh()
+
+    def _any_dirty(self) -> bool:
+        return any(item.dirty for item in self._items)
 
     # ---------------------------------------------------------------- helpers
 
@@ -457,13 +580,33 @@ class MainWindow(QMainWindow):
         self._document.set_edge_mode(mode)
         self._document.set_feather(self._feather.value())
 
-    def _set_document(self, document: Document, path: Path | None) -> None:
-        self._document = document
-        self._path = path
-        self._dirty = False
-        self._apply_settings()
-        self._editor.set_document(document)
+    def _export_all(self) -> None:
+        """Render every gallery image and save it into a chosen folder."""
+        if not self._items:
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self, strings.DIALOG_EXPORT_ALL_TITLE, str(self._default_dir())
+        )
+        if not directory:
+            return
+        out = Path(directory)
+        exported = 0
+        for index, item in enumerate(self._items):
+            stem = item.path.stem if item.path is not None else f"vlozeno_{index + 1}"
+            try:
+                imageio.save(item.document.render(), out / f"{stem}_blur.png")
+            except (OSError, ValueError):
+                continue
+            item.dirty = False
+            exported += 1
         self._refresh()
+        self.statusBar().showMessage(strings.status_exported(exported))
+
+    def _update_current_label(self) -> None:
+        current = self._current_item
+        list_item = self._nav.item(self._current)
+        if current is not None and current.path is not None and list_item is not None:
+            list_item.setText(current.path.name)
 
     def _on_edit(self) -> None:
         self._dirty = True
@@ -493,20 +636,27 @@ class MainWindow(QMainWindow):
         self._save_action.setEnabled(has_doc)
         self._copy_action.setEnabled(has_doc)
         self._faces_action.setEnabled(has_doc)
+        self._close_image_action.setEnabled(has_doc)
+        self._export_all_action.setEnabled(bool(self._items))
         self._undo_action.setEnabled(doc is not None and doc.can_undo)
         self._redo_action.setEnabled(doc is not None and doc.can_redo)
         self._clear_action.setEnabled(doc is not None and not doc.is_empty)
         self._feather.setEnabled(self._soft_edges.isChecked())
+        self.setWindowModified(self._dirty)
+        self.setWindowTitle(self._window_title())
+
+    def _window_title(self) -> str:
         if self._path is not None:
             name = self._path.name
+        elif self._document is not None:
+            name = strings.TITLE_PASTED
         else:
-            name = strings.TITLE_PASTED if has_doc else strings.TITLE_NO_IMAGE
-        self.setWindowModified(self._dirty)
-        self.setWindowTitle(f"{name}[*] — {APP_TITLE}")
+            name = strings.TITLE_NO_IMAGE
+        count = len(self._items)
+        position = f" ({self._current + 1}/{count})" if count > 1 else ""
+        return f"{name}{position}[*] — {APP_TITLE}"
 
-    def _confirm_discard(self) -> bool:
-        if not self._dirty:
-            return True
+    def _ask_discard(self) -> bool:
         answer = QMessageBox.question(
             self,
             APP_TITLE,
@@ -555,10 +705,9 @@ class MainWindow(QMainWindow):
     def _restore_session(self, restored: session.RestoredSession) -> None:
         document = Document(restored.base)
         document.set_mask(restored.mask)
-        self._document = document
-        self._path = Path(restored.source) if restored.source else None
-        if self._path is not None:
-            self._source_dir = self._path.parent
+        source = Path(restored.source) if restored.source else None
+        if source is not None:
+            self._source_dir = source.parent
         controls = (self._effect_combo, self._intensity, self._feather, self._soft_edges)
         for control in controls:
             control.blockSignals(True)
@@ -570,10 +719,9 @@ class MainWindow(QMainWindow):
         self._feather.setValue(restored.feather)
         for control in controls:
             control.blockSignals(False)
-        self._apply_settings()
-        self._editor.set_document(document)
+        self._add_item(document, source)  # applies the synced settings and shows it
         self._dirty = True
-        self._after_change()
+        self._refresh()
         self.statusBar().showMessage(strings.STATUS_RECOVERED)
 
     def _effect_index(self, kind: str) -> int:
@@ -590,10 +738,10 @@ class MainWindow(QMainWindow):
 
     def _open_dialog(self) -> None:
         start = str(self._default_dir())
-        filename, _ = QFileDialog.getOpenFileName(
+        files, _ = QFileDialog.getOpenFileNames(
             self, strings.DIALOG_OPEN_TITLE, start, _OPEN_FILTER
         )
-        if filename:
+        for filename in files:
             self.load_path(Path(filename))
 
     def _save(self) -> None:
@@ -625,8 +773,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ Qt overrides
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._confirm_discard():
-            self._clear_autosave()
-            event.accept()
-        else:
+        if self._any_dirty() and not self._ask_discard():
             event.ignore()
+            return
+        self._clear_autosave()
+        event.accept()
