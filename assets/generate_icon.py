@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate the BLURAnything application icon.
 
-Draws a macOS-style rounded-square icon (blue gradient with three white bars,
-the middle one blurred to evoke redaction) and exports every asset we need:
+Draws a macOS-style rounded-square icon: a friendly cartoon face on a blue
+gradient, whose right half progressively blurs and melts away — exactly what
+the app does to faces. Exports every asset we need:
 
 - ``assets/icon-1024.png`` — the master render
 - ``assets/icon.ico`` — multi-size Windows icon
@@ -14,20 +15,29 @@ Run it after changing the design: ``.venv/bin/python assets/generate_icon.py``.
 
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ASSETS = Path(__file__).resolve().parent
 REPO = ASSETS.parent
 RESOURCES = REPO / "src" / "bluranything" / "resources"
 
 MASTER = 1024
+SUPERSAMPLE = 2  # draw larger, then downscale for smooth anti-aliased edges
+CORNER = 0.2237  # macOS squircle corner radius as a fraction of the icon size
+
 TOP = (42, 160, 255, 255)  # #2AA0FF
 BOTTOM = (10, 90, 216, 255)  # #0A5AD8
-BAR = (255, 255, 255, 240)
+SKIN = (255, 218, 179, 255)
+HAIR = (60, 46, 44, 255)
+EYE_WHITE = (255, 255, 255, 255)
+PUPIL = (54, 44, 60, 255)
+CHEEK = (255, 120, 130, 160)
+MOUTH = (150, 70, 74, 255)
 
 ICONSET_SIZES = {
     "icon_16x16.png": 16,
@@ -58,35 +68,114 @@ def _rounded_alpha(size: int, radius: int) -> Image.Image:
     return mask
 
 
-def render_icon(size: int = MASTER) -> Image.Image:
-    background = _gradient(size)
-    background.putalpha(_rounded_alpha(size, round(size * 0.2237)))
+def _horizontal_ramp(size: int, start: float, end: float) -> Image.Image:
+    """Left-to-right 0→255 ramp: 0 left of *start*, 255 right of *end* (fractions)."""
+    row = Image.new("L", (size, 1))
+    x0, x1 = size * start, size * end
+    for x in range(size):
+        if x <= x0:
+            value = 0
+        elif x >= x1:
+            value = 255
+        else:
+            value = round((x - x0) / (x1 - x0) * 255)
+        row.putpixel((x, 0), value)
+    return row.resize((size, size))
 
-    bars = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(bars)
-    left = round(size * 0.235)
-    inner = size - 2 * left
-    bar_h = round(size * 0.105)
-    gap = round(size * 0.072)
-    top = (size - (3 * bar_h + 2 * gap)) // 2
-    rows: list[tuple[int, int]] = []
-    for index, fraction in enumerate((0.90, 0.66, 0.78)):
-        y0 = top + index * (bar_h + gap)
-        rows.append((y0, y0 + bar_h))
-        draw.rounded_rectangle(
-            (left, y0, left + round(inner * fraction), y0 + bar_h),
-            radius=bar_h // 2,
-            fill=BAR,
+
+def _draw_character(size: int) -> Image.Image:
+    """A cute cartoon face on a transparent layer."""
+    layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+
+    def box(cx: float, cy: float, rx: float, ry: float) -> tuple[float, float, float, float]:
+        return (cx - rx, cy - ry, cx + rx, cy + ry)
+
+    cx = size * 0.5
+    cy = size * 0.55
+    face_r = size * 0.30
+
+    # ears
+    for sign in (-1, 1):
+        draw.ellipse(
+            box(cx + sign * face_r * 0.94, cy + size * 0.02, size * 0.06, size * 0.07), fill=SKIN
+        )
+    # face
+    draw.ellipse(box(cx, cy, face_r, face_r * 1.05), fill=SKIN)
+    # hair: a crescent framing the top, plus a soft fringe of overlapping tufts
+    draw.ellipse(box(cx, cy - face_r * 0.34, face_r * 1.02, face_r * 0.98), fill=HAIR)
+    draw.ellipse(box(cx, cy - face_r * 0.02, face_r * 0.98, face_r * 1.02), fill=SKIN)
+    for i in range(-2, 3):
+        tuft_x = cx + i * face_r * 0.42
+        draw.ellipse(box(tuft_x, cy - face_r * 0.66, face_r * 0.30, face_r * 0.26), fill=HAIR)
+
+    eye_dx = size * 0.115
+    eye_y = cy - size * 0.015
+    for sign in (-1, 1):
+        ex = cx + sign * eye_dx
+        draw.ellipse(box(ex, eye_y, size * 0.056, size * 0.070), fill=EYE_WHITE)
+        draw.ellipse(
+            box(ex + sign * size * 0.006, eye_y + size * 0.012, size * 0.032, size * 0.036),
+            fill=PUPIL,
+        )
+        draw.ellipse(
+            box(ex - size * 0.012, eye_y - size * 0.012, size * 0.012, size * 0.012), fill=EYE_WHITE
+        )
+        # eyebrow
+        draw.arc(
+            box(ex, eye_y - size * 0.085, size * 0.060, size * 0.045),
+            200,
+            340,
+            fill=HAIR,
+            width=round(size * 0.013),
         )
 
-    # Blur the middle bar to signal redaction — this is what the app does.
-    y0, y1 = rows[1]
-    margin = round(gap * 0.45)
-    band = (0, y0 - margin, size, y1 + margin)
-    blurred = bars.crop(band).filter(ImageFilter.GaussianBlur(round(bar_h * 0.28)))
-    bars.paste(blurred, (band[0], band[1]))
+    # cheeks — soft blush composited over the skin (not straight onto the layer,
+    # or the semi-transparent pink would later blend with the blue background)
+    blush = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    blush_draw = ImageDraw.Draw(blush)
+    for sign in (-1, 1):
+        blush_draw.ellipse(
+            box(cx + sign * size * 0.155, cy + size * 0.088, size * 0.055, size * 0.040), fill=CHEEK
+        )
+    blush = blush.filter(ImageFilter.GaussianBlur(round(size * 0.010)))
+    layer = Image.alpha_composite(layer, blush)
+    draw = ImageDraw.Draw(layer)
 
-    return Image.alpha_composite(background, bars)
+    # smile (arc with rounded ends)
+    mcx, mcy = cx, cy + size * 0.075
+    mrx, mry = size * 0.105, size * 0.095
+    width = round(size * 0.020)
+    draw.arc((mcx - mrx, mcy - mry, mcx + mrx, mcy + mry), 25, 155, fill=MOUTH, width=width)
+    for angle in (25, 155):
+        px = mcx + mrx * math.cos(math.radians(angle))
+        py = mcy + mry * math.sin(math.radians(angle))
+        draw.ellipse(box(px, py, width / 2, width / 2), fill=MOUTH)
+
+    return layer
+
+
+def _compose(size: int) -> Image.Image:
+    rounded = _rounded_alpha(size, round(size * CORNER))
+    background = _gradient(size)
+    background.putalpha(rounded)
+
+    character = _draw_character(size)
+    blurred = character.filter(ImageFilter.GaussianBlur(round(size * 0.045)))
+    # Left half stays sharp, right half blurs — with a visible transition band.
+    face = Image.composite(blurred, character, _horizontal_ramp(size, 0.44, 0.82))
+
+    # Let the blurred side melt a touch into the background, and clip to the squircle.
+    fade = _horizontal_ramp(size, 0.82, 1.0).point(lambda v: 255 - round(v * 0.30))
+    alpha = ImageChops.multiply(ImageChops.multiply(face.getchannel("A"), fade), rounded)
+    face.putalpha(alpha)
+
+    return Image.alpha_composite(background, face)
+
+
+def render_icon(size: int = MASTER) -> Image.Image:
+    big = _compose(size * SUPERSAMPLE)
+    return big.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def main() -> None:
