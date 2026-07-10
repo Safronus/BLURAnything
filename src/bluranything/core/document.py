@@ -120,6 +120,16 @@ class Document:
             self._begin_change()
         mask_ops.stamp_stroke(self._mask, points, radius)
 
+    def stamp_faces(self, boxes: Sequence[mask_ops.Box], *, new_stroke: bool = True) -> None:
+        """Blur several detected faces (as ellipses) in a single undo step."""
+        boxes = list(boxes)
+        if not boxes:
+            return
+        if new_stroke:
+            self._begin_change()
+        for box in boxes:
+            mask_ops.stamp_ellipse(self._mask, box)
+
     def clear_mask(self) -> None:
         """Remove all redactions (undoable)."""
         if self.is_empty:

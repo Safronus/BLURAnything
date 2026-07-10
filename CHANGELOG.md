@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Automatic **face blur**: detect and blur every face in the image at once
+  (menu *Obličeje* / `Ctrl+F`), redacted with the current effect. The detector
+  is fully offline and switchable — **YuNet** (accurate, bundled ONNX model) or
+  **Haar** — with a sensitivity setting.
 - Drag & drop an image file from Finder/Explorer onto the editor to open it,
   with a drop-target highlight while dragging.
 - Application icon (in-app window/dock icon, plus macOS `.icns` and Windows

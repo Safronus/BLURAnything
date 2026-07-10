@@ -84,6 +84,21 @@ def test_brush_stroke_collapses_into_one_undo_step() -> None:
     assert doc.is_empty  # the whole stroke undoes at once
 
 
+def test_stamp_faces_blurs_all_boxes_in_one_undo_step() -> None:
+    doc = make_document()
+    doc.stamp_faces([(2, 2, 15, 15), (20, 5, 35, 20)])
+    assert not doc.is_empty
+    doc.undo()
+    assert doc.is_empty  # both faces collapse into a single step
+
+
+def test_stamp_faces_with_no_boxes_is_noop() -> None:
+    doc = make_document()
+    doc.stamp_faces([])
+    assert doc.is_empty
+    assert not doc.can_undo
+
+
 def test_clear_mask_is_undoable() -> None:
     doc = make_document()
     doc.stamp_rectangle((5, 5, 25, 20))

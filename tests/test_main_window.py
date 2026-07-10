@@ -164,6 +164,31 @@ def test_tool_selector_toggles_brush_size(window: MainWindow) -> None:
     assert not window._brush.isEnabled()
 
 
+def test_blur_all_faces_stamps_detected(
+    window: MainWindow, image_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    monkeypatch.setattr(
+        "bluranything.core.faces.face_boxes", lambda *args, **kwargs: [(2, 2, 20, 20)]
+    )
+    window.blur_all_faces()
+    assert not doc.is_empty
+    assert window.isWindowModified()
+
+
+def test_blur_all_faces_reports_when_none(
+    window: MainWindow, image_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window.load_path(image_file)
+    doc = window.document
+    assert doc is not None
+    monkeypatch.setattr("bluranything.core.faces.face_boxes", lambda *args, **kwargs: [])
+    window.blur_all_faces()
+    assert doc.is_empty
+
+
 def test_drop_loads_image(window: MainWindow, tmp_path: Path) -> None:
     image = tmp_path / "drop.png"
     checkerboard((32, 24)).save(image)

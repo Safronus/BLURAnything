@@ -11,6 +11,7 @@ APP_TITLE = "BLURAnything"  # brand name, not translated
 # --- Menus ---
 MENU_FILE = "&Soubor"
 MENU_EDIT = "Úprav&y"
+MENU_FACES = "&Obličeje"
 MENU_HELP = "Nápo&věda"
 
 # --- Actions ---
@@ -55,6 +56,31 @@ TOOL_HINT_ELLIPSE = "Elipsa — tažením rozmažete oválnou oblast."
 TOOL_HINT_POLYGON = "Mnohoúhelník — klikáním přidávejte body, dvojklikem uzavřete."
 TOOL_HINT_LASSO = "Laso — tažením nakreslete volnou oblast."
 TOOL_HINT_BRUSH = "Štětec — tažením malujte rozostření."
+
+# --- Faces ---
+ACTION_BLUR_FACES = "Rozmazat &obličeje"
+FACES_DETECTOR = "Detektor"
+FACES_SENSITIVITY = "Citlivost"
+DETECTOR_YUNET = "YuNet (přesný)"
+DETECTOR_HAAR = "Haar (rychlý)"
+SENSITIVITY_LOW = "Nízká"
+SENSITIVITY_MEDIUM = "Střední"
+SENSITIVITY_HIGH = "Vysoká"
+FACES_NONE = "Žádný obličej nenalezen."
+FACES_DETECTING = "Hledám obličeje…"
+
+
+def _faces_word(count: int) -> str:
+    if count == 1:
+        return "obličej"
+    if 2 <= count <= 4:
+        return "obličeje"
+    return "obličejů"
+
+
+def status_faces_blurred(count: int) -> str:
+    return f"Rozmazáno {count} {_faces_word(count)}"
+
 
 # --- Status messages ---
 STATUS_WELCOME = "Otevřete nebo vložte obrázek (⌘V), pak tažením rozmažte."

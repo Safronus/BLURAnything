@@ -19,6 +19,7 @@
 │   effects.py       Effect protocol; blur/pixelate/solid      │
 │   mask.py          stamp rect/ellipse/polygon/stroke; feather│
 │   compositor.py    blend base + effect layer through a mask  │
+│   faces.py         offline face detection (YuNet / Haar)     │
 │   imageio.py       load/save incl. HEIC and PDF              │
 │   session.py       autosave / recovery serialization         │
 └──────────────────────────────────────────────────────────────┘

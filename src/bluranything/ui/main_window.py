@@ -6,8 +6,9 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -63,6 +64,20 @@ _TOOL_HINTS = {
     Tool.BRUSH: strings.TOOL_HINT_BRUSH,
 }
 
+#: Face-detection backends (key stored in each menu action's data).
+_FACE_BACKENDS: tuple[tuple[str, str], ...] = (
+    ("yunet", strings.DETECTOR_YUNET),
+    ("haar", strings.DETECTOR_HAAR),
+)
+#: Sensitivity presets: (label, value in 0-1).
+_FACE_SENSITIVITIES: tuple[tuple[str, float], ...] = (
+    (strings.SENSITIVITY_LOW, 0.3),
+    (strings.SENSITIVITY_MEDIUM, 0.5),
+    (strings.SENSITIVITY_HIGH, 0.7),
+)
+_DEFAULT_FACE_BACKEND = "yunet"
+_DEFAULT_FACE_SENSITIVITY = 0.5
+
 _OPEN_PATTERNS = " ".join(f"*{ext}" for ext in imageio.INPUT_EXTENSIONS)
 _OPEN_FILTER = f"{strings.FILTER_IMAGES} ({_OPEN_PATTERNS})"
 _SAVE_FILTER = ";;".join(
@@ -87,6 +102,8 @@ class MainWindow(QMainWindow):
         self._path: Path | None = None
         self._source_dir: Path | None = None  # folder the current image was loaded from
         self._dirty = False
+        self._face_backend = _DEFAULT_FACE_BACKEND
+        self._face_sensitivity = _DEFAULT_FACE_SENSITIVITY
         self._autosave_dir = autosave_dir or _DEFAULT_AUTOSAVE_DIR
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setInterval(AUTOSAVE_DEBOUNCE_MS)
@@ -171,6 +188,10 @@ class MainWindow(QMainWindow):
         self._clear_action = QAction(strings.ACTION_CLEAR, self)
         self._clear_action.triggered.connect(self.clear)
 
+        self._faces_action = QAction(strings.ACTION_BLUR_FACES, self)
+        self._faces_action.setShortcut("Ctrl+F")
+        self._faces_action.triggered.connect(self.blur_all_faces)
+
         self._quit_action = QAction(strings.ACTION_QUIT, self)
         self._quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         self._quit_action.triggered.connect(self.close)
@@ -194,8 +215,47 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self._copy_action)
         edit_menu.addAction(self._clear_action)
 
+        self._build_faces_menu()
+
         help_menu = self.menuBar().addMenu(strings.MENU_HELP)
         help_menu.addAction(self._about_action)
+
+    def _build_faces_menu(self) -> None:
+        faces_menu = self.menuBar().addMenu(strings.MENU_FACES)
+        faces_menu.addAction(self._faces_action)
+        faces_menu.addSeparator()
+
+        detector_menu = faces_menu.addMenu(strings.FACES_DETECTOR)
+        detector_group = QActionGroup(self)
+        detector_group.setExclusive(True)
+        for key, label in _FACE_BACKENDS:
+            action = QAction(label, self, checkable=True)
+            action.setData(key)
+            action.setChecked(key == self._face_backend)
+            action.triggered.connect(self._on_face_backend)
+            detector_group.addAction(action)
+            detector_menu.addAction(action)
+
+        sensitivity_menu = faces_menu.addMenu(strings.FACES_SENSITIVITY)
+        sensitivity_group = QActionGroup(self)
+        sensitivity_group.setExclusive(True)
+        for label, value in _FACE_SENSITIVITIES:
+            action = QAction(label, self, checkable=True)
+            action.setData(value)
+            action.setChecked(abs(value - self._face_sensitivity) < 1e-6)
+            action.triggered.connect(self._on_face_sensitivity)
+            sensitivity_group.addAction(action)
+            sensitivity_menu.addAction(action)
+
+    def _on_face_backend(self) -> None:
+        action = self.sender()
+        if isinstance(action, QAction):
+            self._face_backend = str(action.data())
+
+    def _on_face_sensitivity(self) -> None:
+        action = self.sender()
+        if isinstance(action, QAction):
+            self._face_sensitivity = float(action.data())
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main", self)
@@ -214,6 +274,8 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self._soft_edges)
         toolbar.addWidget(QLabel(strings.LABEL_FEATHER, self))
         toolbar.addWidget(self._feather)
+        toolbar.addSeparator()
+        toolbar.addAction(self._faces_action)
         toolbar.addSeparator()
         toolbar.addAction(self._undo_action)
         toolbar.addAction(self._redo_action)
@@ -303,6 +365,30 @@ class MainWindow(QMainWindow):
             image_to_clipboard(self._document.render())
             self.statusBar().showMessage(strings.STATUS_COPIED)
 
+    def blur_all_faces(self) -> None:
+        """Detect and blur every face in the image with the current effect."""
+        if self._document is None:
+            return
+        from bluranything.core import faces  # lazy: loads OpenCV on first use
+
+        self.statusBar().showMessage(strings.FACES_DETECTING)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            boxes = faces.face_boxes(
+                self._document.base,
+                backend=self._face_backend,
+                sensitivity=self._face_sensitivity,
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not boxes:
+            self.statusBar().showMessage(strings.FACES_NONE)
+            return
+        self._document.stamp_faces(boxes)
+        self._dirty = True
+        self._after_change()
+        self.statusBar().showMessage(strings.status_faces_blurred(len(boxes)))
+
     @property
     def document(self) -> Document | None:
         return self._document
@@ -379,6 +465,7 @@ class MainWindow(QMainWindow):
         has_doc = doc is not None
         self._save_action.setEnabled(has_doc)
         self._copy_action.setEnabled(has_doc)
+        self._faces_action.setEnabled(has_doc)
         self._undo_action.setEnabled(doc is not None and doc.can_undo)
         self._redo_action.setEnabled(doc is not None and doc.can_redo)
         self._clear_action.setEnabled(doc is not None and not doc.is_empty)
