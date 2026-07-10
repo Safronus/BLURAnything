@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QMessageBox
 from pytestqt.qtbot import QtBot
 
@@ -49,6 +51,11 @@ def test_load_enables_editing(window: MainWindow, image_file: Path) -> None:
     assert doc.size == (40, 30)
     assert window._save_action.isEnabled()
     assert not window.isWindowModified()
+
+
+def test_dialogs_default_to_source_folder(window: MainWindow, image_file: Path) -> None:
+    window.load_path(image_file)
+    assert window._default_dir() == image_file.parent
 
 
 def test_load_missing_file_reports_error(
@@ -155,6 +162,24 @@ def test_tool_selector_toggles_brush_size(window: MainWindow) -> None:
     assert window._brush.isEnabled()
     window._tool_combo.setCurrentIndex(0)  # Rectangle
     assert not window._brush.isEnabled()
+
+
+def test_drop_loads_image(window: MainWindow, tmp_path: Path) -> None:
+    image = tmp_path / "drop.png"
+    checkerboard((32, 24)).save(image)
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(image))])
+    event = QDropEvent(
+        QPointF(5, 5),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    window.editor.dropEvent(event)
+    doc = window.document
+    assert doc is not None
+    assert doc.size == (32, 24)
 
 
 def test_copy_result_puts_image_on_clipboard(window: MainWindow, image_file: Path) -> None:

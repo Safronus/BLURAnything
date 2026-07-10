@@ -8,8 +8,12 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from bluranything import __version__
-from bluranything.app import main, parse_args
+from bluranything.app import load_icon, main, parse_args
 from tests.helpers import checkerboard
+
+
+def test_load_icon_provides_the_bundled_icon(qapp: QApplication) -> None:
+    assert not load_icon().isNull()
 
 
 def test_version_flag_exits_cleanly(capsys: pytest.CaptureFixture[str]) -> None:

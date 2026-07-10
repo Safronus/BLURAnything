@@ -44,6 +44,21 @@ Never replace the symlink with a real in-repo venv.
 | `make build`    | build sdist + wheel into `dist/`                 |
 | `make clean`    | remove caches and build artifacts                |
 
+## Assets
+
+The application icon is generated from code — edit
+[`assets/generate_icon.py`](../assets/generate_icon.py) and re-run it to refresh
+every asset (master PNG, Windows `.ico`, macOS `.icns`, and the bundled
+`src/bluranything/resources/icon.png`):
+
+```bash
+.venv/bin/python assets/generate_icon.py
+```
+
+The UI language is Czech; all user-facing strings live in
+[`src/bluranything/ui/strings.py`](../src/bluranything/ui/strings.py) so another
+language can be added there (or migrated to Qt translations) later.
+
 ## CI
 
 Every push to `main` and every PR runs (`.github/workflows/ci.yml`):

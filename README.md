@@ -11,7 +11,8 @@ them. Built with Python and PySide6 (Qt 6). Cross-platform: macOS, Windows, Linu
 
 ## Features
 
-- Open images (PNG, TIFF, JPG, HEIC, BMP, WebP) or paste from the clipboard (⌘V)
+- Open images (PNG, TIFF, JPG, HEIC, BMP, WebP), paste from the clipboard (⌘V),
+  or drag & drop a file from Finder
 - Redact regions with **rectangle, ellipse, polygon, freehand lasso and brush** tools
 - Effects: **Gaussian blur, pixelate/mosaic and solid fill**, with switchable
   soft (feathered) or hard edges
@@ -21,6 +22,7 @@ them. Built with Python and PySide6 (Qt 6). Cross-platform: macOS, Windows, Linu
 - Export to PNG/TIFF/JPG/HEIC/WebP/BMP or **PDF**, or copy the result to the clipboard
 - **Autosave** with recovery after an unexpected close
 - Dark, macOS-like theme
+- **Czech** user interface (strings centralised, ready for more languages)
 
 > **Privacy note:** Gaussian blur hides faces and visual context well, but heavily
 > blurred *text* can sometimes be partially reconstructed. For sensitive text, prefer
@@ -45,7 +47,8 @@ bluranything photo.png       # open an image right away
 bluranything --version
 ```
 
-1. **Open** an image (`Ctrl+O` / `⌘O`) or **paste** one from the clipboard (`Ctrl+V` / `⌘V`).
+1. **Open** an image (`Ctrl+O` / `⌘O`), **paste** one from the clipboard (`Ctrl+V` / `⌘V`),
+   or **drag & drop** a file from Finder onto the editor.
 2. Pick a **tool** (rectangle, ellipse, polygon, lasso, brush) and an **effect**
    (blur, pixelate, solid fill) in the toolbar, then draw over anything to hide.
 3. Tune **intensity**, **brush size** and **soft/hard edges**; **undo / redo**

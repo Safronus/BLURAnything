@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF
+from pathlib import Path
+
+from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from pytestqt.qtbot import QtBot
 
 from bluranything.core.document import Document
@@ -16,6 +19,12 @@ def make_canvas(qtbot: QtBot) -> tuple[EditorCanvas, Document]:
     qtbot.addWidget(canvas)
     canvas.set_document(document)
     return canvas, document
+
+
+def _url_mime(path: Path) -> QMimeData:
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    return mime
 
 
 def test_rectangle_gesture_blurs(qtbot: QtBot) -> None:
@@ -85,3 +94,52 @@ def test_switching_tool_cancels_gesture(qtbot: QtBot) -> None:
     canvas.set_tool(Tool.RECTANGLE)  # should drop the pending polygon
     canvas.finish_polygon()
     assert document.is_empty
+
+
+def test_drag_enter_accepts_image_file(qtbot: QtBot, tmp_path: Path) -> None:
+    canvas, _ = make_canvas(qtbot)
+    image = tmp_path / "photo.png"
+    checkerboard((10, 10)).save(image)
+    mime = _url_mime(image)  # keep a reference: the event only borrows it
+    event = QDragEnterEvent(
+        QPoint(5, 5),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.dragEnterEvent(event)
+    assert event.isAccepted()
+
+
+def test_drag_enter_rejects_non_image_file(qtbot: QtBot, tmp_path: Path) -> None:
+    canvas, _ = make_canvas(qtbot)
+    text = tmp_path / "notes.txt"
+    text.write_text("nope")
+    mime = _url_mime(text)
+    event = QDragEnterEvent(
+        QPoint(5, 5),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.dragEnterEvent(event)
+    assert not event.isAccepted()
+
+
+def test_drop_emits_file_path(qtbot: QtBot, tmp_path: Path) -> None:
+    canvas, _ = make_canvas(qtbot)
+    image = tmp_path / "dropped.png"
+    checkerboard((12, 12)).save(image)
+    mime = _url_mime(image)
+    event = QDropEvent(
+        QPointF(5, 5),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    with qtbot.waitSignal(canvas.file_dropped) as blocker:
+        canvas.dropEvent(event)
+    assert blocker.args == [str(image)]

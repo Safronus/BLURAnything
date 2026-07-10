@@ -14,11 +14,16 @@ from __future__ import annotations
 
 from enum import Enum
 from itertools import pairwise
+from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QMimeData, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
+    QDragEnterEvent,
+    QDragLeaveEvent,
+    QDragMoveEvent,
+    QDropEvent,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -29,7 +34,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget
 
 from bluranything.core.document import Document
+from bluranything.core.imageio import INPUT_EXTENSIONS
 from bluranything.core.mask import Point
+from bluranything.ui import strings
 from bluranything.ui.qt_image import pil_to_qpixmap
 from bluranything.ui.scaled_view import ScaledImageView
 
@@ -56,10 +63,14 @@ class EditorCanvas(ScaledImageView):
     """Draws the result, a selection tint and the in-progress shape."""
 
     changed = Signal()
+    #: Emitted with the path of an image file dropped onto the canvas.
+    file_dropped = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(placeholder="Open an image or paste (⌘V)", parent=parent)
+        super().__init__(placeholder=strings.PLACEHOLDER_EDITOR, parent=parent)
         self.setMouseTracking(True)
+        self.setAcceptDrops(True)
+        self._drag_active = False
         self._document: Document | None = None
         self._tool = Tool.RECTANGLE
         self._brush_radius = DEFAULT_BRUSH_RADIUS
@@ -217,16 +228,69 @@ class EditorCanvas(ScaledImageView):
         self._hover = None
         self.update()
 
+    # ------------------------------------------------------------ drag & drop
+
+    @staticmethod
+    def _dropped_image_path(mime: QMimeData) -> Path | None:
+        """First local image file among the dragged URLs, if any."""
+        if not mime.hasUrls():
+            return None
+        for url in mime.urls():
+            if url.isLocalFile():
+                path = Path(url.toLocalFile())
+                if path.suffix.lower() in INPUT_EXTENSIONS:
+                    return path
+        return None
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if self._dropped_image_path(event.mimeData()) is not None:
+            self._drag_active = True
+            self.update()
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        if self._drag_active:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
+        self._drag_active = False
+        self.update()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        self._drag_active = False
+        self.update()
+        path = self._dropped_image_path(event.mimeData())
+        if path is not None:
+            event.acceptProposedAction()
+            self.file_dropped.emit(str(path))
+        else:
+            event.ignore()
+
     # ---------------------------------------------------------------- paint
 
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
-        if not self.has_image():
-            return
         painter = QPainter(self)
-        if not self._overlay.isNull():
-            painter.drawPixmap(self.target_rect(), self._overlay, QRectF(self._overlay.rect()))
-        self._draw_active_shape(painter)
+        if self.has_image():
+            if not self._overlay.isNull():
+                painter.drawPixmap(self.target_rect(), self._overlay, QRectF(self._overlay.rect()))
+            self._draw_active_shape(painter)
+        if self._drag_active:
+            self._draw_drop_hint(painter)
+
+    def _draw_drop_hint(self, painter: QPainter) -> None:
+        border = QRectF(self.rect()).adjusted(8, 8, -8, -8)
+        fill = QColor(ACCENT)
+        fill.setAlpha(28)
+        painter.setBrush(fill)
+        painter.setPen(QPen(ACCENT, 2, Qt.PenStyle.DashLine))
+        painter.drawRoundedRect(border, 12, 12)
+        painter.setPen(ACCENT)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, strings.DROP_HINT)
 
     def _draw_active_shape(self, painter: QPainter) -> None:
         painter.setPen(QPen(ACCENT, 1.5, Qt.PenStyle.DashLine))

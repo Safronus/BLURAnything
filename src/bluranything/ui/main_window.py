@@ -28,11 +28,12 @@ from bluranything.core.effects import (
     Effect,
     effect_from,
 )
+from bluranything.ui import strings
 from bluranything.ui.clipboard import image_from_clipboard, image_to_clipboard
 from bluranything.ui.editor_canvas import DEFAULT_BRUSH_RADIUS, EditorCanvas, Tool
 from bluranything.ui.scaled_view import ScaledImageView
 
-APP_TITLE = "BLURAnything"
+APP_TITLE = strings.APP_TITLE
 DEFAULT_FEATHER = 6
 AUTOSAVE_DEBOUNCE_MS = 2500
 _DEFAULT_AUTOSAVE_DIR = Path(tempfile.gettempdir()) / "bluranything" / "autosave"
@@ -40,29 +41,30 @@ _DEFAULT_AUTOSAVE_DIR = Path(tempfile.gettempdir()) / "bluranything" / "autosave
 #: Selectable effects: (combo label, key, slider caption, slider min, max, default).
 #: A zero range means the intensity slider does not apply (e.g. solid fill).
 _EFFECT_KINDS: tuple[tuple[str, str, str, int, int, int], ...] = (
-    ("Blur", "blur", "Blur", 1, 100, DEFAULT_BLUR_RADIUS),
-    ("Pixelate", "pixelate", "Pixel size", 2, 64, DEFAULT_PIXEL_SIZE),
-    ("Solid fill", "solid", "Solid", 0, 0, 0),
+    (strings.EFFECT_BLUR, "blur", strings.CAPTION_BLUR, 1, 100, DEFAULT_BLUR_RADIUS),
+    (strings.EFFECT_PIXELATE, "pixelate", strings.CAPTION_PIXEL_SIZE, 2, 64, DEFAULT_PIXEL_SIZE),
+    (strings.EFFECT_SOLID, "solid", strings.CAPTION_SOLID, 0, 0, 0),
 )
 
 #: Selectable tools shown in the toolbar, in order.
 _TOOLS: tuple[tuple[str, Tool], ...] = (
-    ("Rectangle", Tool.RECTANGLE),
-    ("Ellipse", Tool.ELLIPSE),
-    ("Polygon", Tool.POLYGON),
-    ("Lasso", Tool.LASSO),
-    ("Brush", Tool.BRUSH),
+    (strings.TOOL_RECTANGLE, Tool.RECTANGLE),
+    (strings.TOOL_ELLIPSE, Tool.ELLIPSE),
+    (strings.TOOL_POLYGON, Tool.POLYGON),
+    (strings.TOOL_LASSO, Tool.LASSO),
+    (strings.TOOL_BRUSH, Tool.BRUSH),
 )
 
 _TOOL_HINTS = {
-    Tool.RECTANGLE: "Rectangle — drag to blur a box.",
-    Tool.ELLIPSE: "Ellipse — drag to blur an oval.",
-    Tool.POLYGON: "Polygon — click points, double-click to close.",
-    Tool.LASSO: "Lasso — drag to draw a freehand area.",
-    Tool.BRUSH: "Brush — drag to paint blur.",
+    Tool.RECTANGLE: strings.TOOL_HINT_RECTANGLE,
+    Tool.ELLIPSE: strings.TOOL_HINT_ELLIPSE,
+    Tool.POLYGON: strings.TOOL_HINT_POLYGON,
+    Tool.LASSO: strings.TOOL_HINT_LASSO,
+    Tool.BRUSH: strings.TOOL_HINT_BRUSH,
 }
 
-_OPEN_FILTER = "Images (" + " ".join(f"*{ext}" for ext in imageio.INPUT_EXTENSIONS) + ")"
+_OPEN_PATTERNS = " ".join(f"*{ext}" for ext in imageio.INPUT_EXTENSIONS)
+_OPEN_FILTER = f"{strings.FILTER_IMAGES} ({_OPEN_PATTERNS})"
 _SAVE_FILTER = ";;".join(
     (
         "PNG (*.png)",
@@ -83,6 +85,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._document: Document | None = None
         self._path: Path | None = None
+        self._source_dir: Path | None = None  # folder the current image was loaded from
         self._dirty = False
         self._autosave_dir = autosave_dir or _DEFAULT_AUTOSAVE_DIR
         self._autosave_timer = QTimer(self)
@@ -92,7 +95,8 @@ class MainWindow(QMainWindow):
 
         self._editor = EditorCanvas(self)
         self._editor.changed.connect(self._on_edit)
-        self._preview = ScaledImageView(placeholder="Preview", parent=self)
+        self._editor.file_dropped.connect(self._on_file_dropped)
+        self._preview = ScaledImageView(placeholder=strings.PLACEHOLDER_PREVIEW, parent=self)
 
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
         splitter.addWidget(self._editor)
@@ -103,7 +107,7 @@ class MainWindow(QMainWindow):
         self._tool_combo = QComboBox(self)
         for tool_label, tool in _TOOLS:
             self._tool_combo.addItem(tool_label, tool.value)
-        self._brush_label = QLabel("Brush", self)
+        self._brush_label = QLabel(strings.LABEL_BRUSH, self)
         self._brush = self._make_slider(4, 80, DEFAULT_BRUSH_RADIUS)
         self._brush.setEnabled(False)
         self._brush_label.setEnabled(False)
@@ -111,10 +115,10 @@ class MainWindow(QMainWindow):
         self._effect_combo = QComboBox(self)
         for label, key, *_ in _EFFECT_KINDS:
             self._effect_combo.addItem(label, key)
-        self._intensity_label = QLabel("Blur", self)
+        self._intensity_label = QLabel(strings.CAPTION_BLUR, self)
         self._intensity = self._make_slider(1, 100, DEFAULT_BLUR_RADIUS)
         self._feather = self._make_slider(0, 40, DEFAULT_FEATHER)
-        self._soft_edges = QCheckBox("Soft edges", self)
+        self._soft_edges = QCheckBox(strings.CHECK_SOFT_EDGES, self)
         self._soft_edges.setChecked(True)
 
         self._build_actions()
@@ -124,7 +128,7 @@ class MainWindow(QMainWindow):
         self._configure_intensity()
 
         self.setStatusBar(self.statusBar())
-        self.statusBar().showMessage("Open an image or paste (⌘V), then drag to blur.")
+        self.statusBar().showMessage(strings.STATUS_WELCOME)
         self.resize(1180, 760)
         self._refresh()
         self._maybe_offer_recovery()
@@ -140,42 +144,42 @@ class MainWindow(QMainWindow):
         return slider
 
     def _build_actions(self) -> None:
-        self._open_action = QAction("&Open…", self)
+        self._open_action = QAction(strings.ACTION_OPEN, self)
         self._open_action.setShortcut(QKeySequence.StandardKey.Open)
         self._open_action.triggered.connect(self._open_dialog)
 
-        self._paste_action = QAction("&Paste", self)
+        self._paste_action = QAction(strings.ACTION_PASTE, self)
         self._paste_action.setShortcut(QKeySequence.StandardKey.Paste)
         self._paste_action.triggered.connect(self.paste_from_clipboard)
 
-        self._save_action = QAction("&Save…", self)
+        self._save_action = QAction(strings.ACTION_SAVE, self)
         self._save_action.setShortcut(QKeySequence.StandardKey.Save)
         self._save_action.triggered.connect(self._save)
 
-        self._undo_action = QAction("&Undo", self)
+        self._undo_action = QAction(strings.ACTION_UNDO, self)
         self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self._undo_action.triggered.connect(self.undo)
 
-        self._redo_action = QAction("&Redo", self)
+        self._redo_action = QAction(strings.ACTION_REDO, self)
         self._redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         self._redo_action.triggered.connect(self.redo)
 
-        self._copy_action = QAction("&Copy Result", self)
+        self._copy_action = QAction(strings.ACTION_COPY, self)
         self._copy_action.setShortcut(QKeySequence.StandardKey.Copy)
         self._copy_action.triggered.connect(self.copy_result)
 
-        self._clear_action = QAction("Clear &All", self)
+        self._clear_action = QAction(strings.ACTION_CLEAR, self)
         self._clear_action.triggered.connect(self.clear)
 
-        self._quit_action = QAction("&Quit", self)
+        self._quit_action = QAction(strings.ACTION_QUIT, self)
         self._quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         self._quit_action.triggered.connect(self.close)
 
-        self._about_action = QAction("&About BLURAnything", self)
+        self._about_action = QAction(strings.ACTION_ABOUT, self)
         self._about_action.triggered.connect(self._about)
 
     def _build_menus(self) -> None:
-        file_menu = self.menuBar().addMenu("&File")
+        file_menu = self.menuBar().addMenu(strings.MENU_FILE)
         file_menu.addAction(self._open_action)
         file_menu.addAction(self._paste_action)
         file_menu.addSeparator()
@@ -183,14 +187,14 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
-        edit_menu = self.menuBar().addMenu("&Edit")
+        edit_menu = self.menuBar().addMenu(strings.MENU_EDIT)
         edit_menu.addAction(self._undo_action)
         edit_menu.addAction(self._redo_action)
         edit_menu.addSeparator()
         edit_menu.addAction(self._copy_action)
         edit_menu.addAction(self._clear_action)
 
-        help_menu = self.menuBar().addMenu("&Help")
+        help_menu = self.menuBar().addMenu(strings.MENU_HELP)
         help_menu.addAction(self._about_action)
 
     def _build_toolbar(self) -> None:
@@ -208,7 +212,7 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self._intensity_label)
         toolbar.addWidget(self._intensity)
         toolbar.addWidget(self._soft_edges)
-        toolbar.addWidget(QLabel("Feather", self))
+        toolbar.addWidget(QLabel(strings.LABEL_FEATHER, self))
         toolbar.addWidget(self._feather)
         toolbar.addSeparator()
         toolbar.addAction(self._undo_action)
@@ -240,10 +244,11 @@ class MainWindow(QMainWindow):
         try:
             image = imageio.load(path)
         except (OSError, ValueError) as exc:
-            QMessageBox.critical(self, APP_TITLE, f"Could not open {path}:\n{exc}")
+            QMessageBox.critical(self, APP_TITLE, strings.open_error(path, exc))
             return False
         self._set_document(Document(image), Path(path))
-        self.statusBar().showMessage(f"Opened {path.name} ({image.width}×{image.height})")
+        self._source_dir = Path(path).parent
+        self.statusBar().showMessage(strings.status_opened(path.name, image.width, image.height))
         return True
 
     def paste_from_clipboard(self) -> bool:
@@ -252,11 +257,14 @@ class MainWindow(QMainWindow):
             return False
         image = image_from_clipboard()
         if image is None:
-            QMessageBox.information(self, APP_TITLE, "The clipboard does not contain an image.")
+            QMessageBox.information(self, APP_TITLE, strings.PASTE_NO_IMAGE)
             return False
         self._set_document(Document(image), None)
-        self.statusBar().showMessage(f"Pasted image ({image.width}×{image.height})")
+        self.statusBar().showMessage(strings.status_pasted(image.width, image.height))
         return True
+
+    def _on_file_dropped(self, path: str) -> None:
+        self.load_path(Path(path))
 
     def save_to(self, path: Path) -> bool:
         """Write the rendered result to *path*. Returns True on success."""
@@ -265,13 +273,13 @@ class MainWindow(QMainWindow):
         try:
             imageio.save(self._document.render(), path)
         except (OSError, ValueError) as exc:
-            QMessageBox.critical(self, APP_TITLE, f"Could not save {path}:\n{exc}")
+            QMessageBox.critical(self, APP_TITLE, strings.save_error(path, exc))
             return False
         self._path = path
         self._dirty = False
         self._clear_autosave()
         self._refresh()
-        self.statusBar().showMessage(f"Saved {path.name}")
+        self.statusBar().showMessage(strings.status_saved(path.name))
         return True
 
     def undo(self) -> None:
@@ -293,7 +301,7 @@ class MainWindow(QMainWindow):
         """Copy the rendered result to the system clipboard."""
         if self._document is not None:
             image_to_clipboard(self._document.render())
-            self.statusBar().showMessage("Copied result to the clipboard")
+            self.statusBar().showMessage(strings.STATUS_COPIED)
 
     @property
     def document(self) -> Document | None:
@@ -375,7 +383,10 @@ class MainWindow(QMainWindow):
         self._redo_action.setEnabled(doc is not None and doc.can_redo)
         self._clear_action.setEnabled(doc is not None and not doc.is_empty)
         self._feather.setEnabled(self._soft_edges.isChecked())
-        name = self._path.name if self._path else ("pasted image" if has_doc else "no image")
+        if self._path is not None:
+            name = self._path.name
+        else:
+            name = strings.TITLE_PASTED if has_doc else strings.TITLE_NO_IMAGE
         self.setWindowModified(self._dirty)
         self.setWindowTitle(f"{name}[*] — {APP_TITLE}")
 
@@ -385,7 +396,7 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             APP_TITLE,
-            "You have unsaved changes. Discard them?",
+            strings.DISCARD_QUESTION,
             QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
@@ -418,7 +429,7 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             APP_TITLE,
-            "Recover unsaved work from the previous session?",
+            strings.RECOVERY_QUESTION,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
@@ -432,6 +443,8 @@ class MainWindow(QMainWindow):
         document.set_mask(restored.mask)
         self._document = document
         self._path = Path(restored.source) if restored.source else None
+        if self._path is not None:
+            self._source_dir = self._path.parent
         controls = (self._effect_combo, self._intensity, self._feather, self._soft_edges)
         for control in controls:
             control.blockSignals(True)
@@ -447,7 +460,7 @@ class MainWindow(QMainWindow):
         self._editor.set_document(document)
         self._dirty = True
         self._after_change()
-        self.statusBar().showMessage("Recovered unsaved work")
+        self.statusBar().showMessage(strings.STATUS_RECOVERED)
 
     def _effect_index(self, kind: str) -> int:
         for index in range(self._effect_combo.count()):
@@ -457,17 +470,28 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- Qt dialogs
 
+    def _default_dir(self) -> Path:
+        """Folder to start file dialogs in: where the image came from, else home."""
+        return self._source_dir if self._source_dir is not None else Path.home()
+
     def _open_dialog(self) -> None:
-        start = str(self._path.parent) if self._path else str(Path.home())
-        filename, _ = QFileDialog.getOpenFileName(self, "Open Image", start, _OPEN_FILTER)
+        start = str(self._default_dir())
+        filename, _ = QFileDialog.getOpenFileName(
+            self, strings.DIALOG_OPEN_TITLE, start, _OPEN_FILTER
+        )
         if filename:
             self.load_path(Path(filename))
 
     def _save(self) -> None:
         if self._document is None:
             return
-        start = str(self._path) if self._path else str(Path.home() / "blurred.png")
-        filename, _ = QFileDialog.getSaveFileName(self, "Save Image", start, _SAVE_FILTER)
+        if self._path is not None:
+            start = str(self._path)  # same folder and name as the source/last save
+        else:
+            start = str(self._default_dir() / "blurred.png")
+        filename, _ = QFileDialog.getSaveFileName(
+            self, strings.DIALOG_SAVE_TITLE, start, _SAVE_FILTER
+        )
         if not filename:
             return
         path = Path(filename)
@@ -478,9 +502,9 @@ class MainWindow(QMainWindow):
     def _about(self) -> None:
         QMessageBox.about(
             self,
-            f"About {APP_TITLE}",
+            strings.ACTION_ABOUT,
             f"<b>{APP_TITLE}</b> {__version__}<br>"
-            "Blur sensitive parts of images and screenshots.<br>"
+            f"{strings.ABOUT_TAGLINE}<br>"
             '<a href="https://github.com/Safronus/BLURAnything">github.com/Safronus/BLURAnything</a>',
         )
 
