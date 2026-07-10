@@ -43,6 +43,7 @@ from bluranything.ui.scaled_view import ScaledImageView
 ACCENT = QColor("#0A84FF")
 OVERLAY_ALPHA = 0.42
 DEFAULT_BRUSH_RADIUS = 16
+LASSO_MIN_STEP = 2.0  # min image-space distance between recorded lasso points
 
 
 class Tool(Enum):
@@ -136,8 +137,9 @@ class EditorCanvas(ScaledImageView):
             self._last = point
             self.changed.emit()
         elif self._tool is Tool.LASSO:
-            self._vertices.append(point)
-            self.update()
+            if not self._vertices or _far_enough(self._vertices[-1], point, LASSO_MIN_STEP):
+                self._vertices.append(point)
+                self.update()
         else:
             self.update()
 
@@ -333,3 +335,10 @@ def _dedupe(points: list[QPointF]) -> list[QPointF]:
         if not out or abs(point.x() - out[-1].x()) > 0.5 or abs(point.y() - out[-1].y()) > 0.5:
             out.append(point)
     return out
+
+
+def _far_enough(a: QPointF, b: QPointF, min_step: float) -> bool:
+    """True when *a* and *b* are at least *min_step* pixels apart."""
+    dx = a.x() - b.x()
+    dy = a.y() - b.y()
+    return dx * dx + dy * dy >= min_step * min_step

@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status messages); strings are centralised for future localisation.
 - Open/Save dialogs default to the folder the current image was loaded from.
 
+### Fixed
+
+- The lasso tool no longer stutters or captures only part of the traced area on
+  large images: the canvas now caches a pre-scaled image so interactive repaints
+  stay fast, and freehand points are thinned to a smooth, light outline.
+
 ## [0.2.0] - 2026-07-09
 
 ### Added

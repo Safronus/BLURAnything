@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from PIL import Image
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import QWidget
 
 from bluranything.ui.qt_image import pil_to_qpixmap
@@ -23,12 +23,33 @@ class ScaledImageView(QWidget):
     def __init__(self, placeholder: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pixmap = QPixmap()
+        self._scaled = QPixmap()  # cached pre-scaled copy, so repaints are a cheap blit
         self._placeholder = placeholder
         self.setMinimumSize(240, 240)
 
     def set_image(self, image: Image.Image | None) -> None:
         self._pixmap = pil_to_qpixmap(image) if image is not None else QPixmap()
+        self._rebuild_scaled()
         self.update()
+
+    def _rebuild_scaled(self) -> None:
+        """Rebuild the cached scaled pixmap for the current size (smooth, once)."""
+        if self._pixmap.isNull():
+            self._scaled = QPixmap()
+            return
+        target = self._pixmap.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        if target.isEmpty():
+            self._scaled = QPixmap()
+            return
+        self._scaled = self._pixmap.scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._rebuild_scaled()
 
     def has_image(self) -> bool:
         return not self._pixmap.isNull()
@@ -77,5 +98,6 @@ class ScaledImageView(QWidget):
                 painter.setPen(PLACEHOLDER_COLOR)
                 painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._placeholder)
             return
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawPixmap(self.target_rect(), self._pixmap, QRectF(self._pixmap.rect()))
+        if self._scaled.isNull():
+            self._rebuild_scaled()
+        painter.drawPixmap(self.target_rect().topLeft(), self._scaled)

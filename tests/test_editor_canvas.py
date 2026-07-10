@@ -96,6 +96,16 @@ def test_switching_tool_cancels_gesture(qtbot: QtBot) -> None:
     assert document.is_empty
 
 
+def test_lasso_thins_dense_points(qtbot: QtBot) -> None:
+    canvas, _ = make_canvas(qtbot)
+    canvas.set_tool(Tool.LASSO)
+    canvas.begin_gesture(QPointF(10, 10))
+    for i in range(1, 60):
+        canvas.extend_gesture(QPointF(10 + i * 0.1, 10))  # sub-pixel steps
+    # near-duplicate points are dropped so the outline stays light and smooth
+    assert len(canvas._vertices) < 12
+
+
 def test_drag_enter_accepts_image_file(qtbot: QtBot, tmp_path: Path) -> None:
     canvas, _ = make_canvas(qtbot)
     image = tmp_path / "photo.png"
