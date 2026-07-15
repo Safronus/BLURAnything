@@ -26,7 +26,7 @@ dependencies = [
   "PySide6>=6.6",
   "Pillow>=10.0",
   "pillow-heif>=0.16",  # HEIC/HEIF read & write support for Pillow
-  "opencv-python-headless>=4.9,<5",  # offline face detection (YuNet/Haar); headless avoids GUI-lib clashes with Qt; <5 for a stable API
+  "opencv-python-headless>=4.9,<6",  # offline face detection (YuNet/Haar); headless avoids GUI-lib clashes with Qt; <5 for a stable API
 ]
 dynamic = ["version"]
 
